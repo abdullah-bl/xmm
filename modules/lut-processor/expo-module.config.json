@@ -1,0 +1,9 @@
+{
+  "platforms": ["apple", "android"],
+  "apple": {
+    "modules": ["LutProcessorModule"]
+  },
+  "android": {
+    "modules": ["expo.modules.lutprocessor.LutProcessorModule"]
+  }
+}
