@@ -15,6 +15,7 @@ import type { SFSymbol } from 'sf-symbols-typescript';
 import { SfIcon } from '@/components/camera/sf-icon';
 import { FilmListItem } from '@/components/film-list-item';
 import { useFilms } from '@/hooks/use-films';
+import { useThemeColor } from '@/hooks/useThemeColor';
 import { useFilmStore } from '@/stores/film-store';
 import type { FilmsResponse } from '@/types/backend.types';
 
@@ -51,6 +52,15 @@ export default function FilmsScreen() {
   const setActive = useFilmStore((s) => s.setActive);
   const favorites = useFilmStore((s) => s.favorites);
 
+  const accent = useThemeColor('accent');
+  const foreground = useThemeColor('foreground');
+  const muted = useThemeColor('muted');
+  const surface = useThemeColor('surface');
+  const separator = useThemeColor('separator');
+  const warning = useThemeColor('warning');
+  const danger = useThemeColor('danger');
+  const accentForeground = useThemeColor('accent-foreground');
+
   const [search, setSearch] = useState('');
   const [refreshing, setRefreshing] = useState(false);
 
@@ -85,7 +95,7 @@ export default function FilmsScreen() {
         key: '__favorites',
         title: 'Favorites',
         icon: 'star.fill',
-        iconColor: '#FFD60A',
+        iconColor: accent,
         films: favs,
       });
     }
@@ -102,12 +112,12 @@ export default function FilmsScreen() {
       });
     }
     return result;
-  }, [filtered, favorites]);
+  }, [filtered, favorites, accent]);
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
     if (Platform.OS === 'ios') {
-      Haptics.selectionAsync().catch(() => {});
+      Haptics.selectionAsync().catch(() => { });
     }
     try {
       await refresh();
@@ -119,84 +129,96 @@ export default function FilmsScreen() {
   const cachedLabel = formatRelativeTime(cachedAt);
 
   return (
-    <ScrollView
-      contentInsetAdjustmentBehavior="automatic"
-      style={{ flex: 1 }}
-      contentContainerStyle={{ paddingBottom: 32 }}
-      refreshControl={
-        <RefreshControl
-          refreshing={refreshing}
-          onRefresh={handleRefresh}
-          tintColor="#FFD60A"
-        />
-      }
-    >
-      <Stack.Screen
-        options={{
-          title: 'Films',
-          headerLargeTitle: true,
-          headerSearchBarOptions: {
-            placeholder: 'Search films',
-            hideWhenScrolling: false,
-            onChangeText: (e) => setSearch(e.nativeEvent.text ?? ''),
-          },
-        }}
+    <>
+      <Stack.Screen.Title large>Films</Stack.Screen.Title>
+      <Stack.SearchBar
+        onChangeText={(e) => setSearch(e.nativeEvent.text ?? '')}
       />
+      <Stack.Toolbar placement="bottom">
+        <Stack.Toolbar.SearchBarSlot />
+      </Stack.Toolbar>
 
-      {isOffline ? (
-        <OfflineBanner cachedLabel={cachedLabel} />
-      ) : null}
-
-      <View style={{ paddingTop: 8 }}>
-        <Section>
-          <NoFilmRow
-            active={activeFilmId === null}
-            onPress={() => {
-              if (Platform.OS === 'ios') {
-                Haptics.selectionAsync().catch(() => {});
-              }
-              setActive(null);
-            }}
+      <ScrollView
+        contentInsetAdjustmentBehavior="automatic"
+        style={{ flex: 1 }}
+        contentContainerStyle={{ paddingBottom: 32 }}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            tintColor={accent}
           />
-        </Section>
-
-        {isLoading ? (
-          <View style={{ paddingVertical: 60, alignItems: 'center' }}>
-            <ActivityIndicator />
-          </View>
-        ) : error && !films?.length ? (
-          <ErrorState error={error} onRetry={handleRefresh} />
-        ) : filtered.length === 0 ? (
-          <EmptyState search={search} />
-        ) : (
-          sections.map((section) => (
-            <Section
-              key={section.key}
-              title={section.title}
-              icon={section.icon}
-              iconColor={section.iconColor}
-              count={section.films.length}
-            >
-              {section.films.map((film, i) => (
-                <View key={film.id}>
-                  <FilmListItem
-                    film={film}
-                    active={activeFilmId === film.id}
-                  />
-                  {i < section.films.length - 1 ? <RowSeparator /> : null}
-                </View>
-              ))}
-            </Section>
-          ))
-        )}
-
-        {films?.length && isValidating && !refreshing ? (
-          <View style={{ paddingVertical: 16, alignItems: 'center' }}>
-            <ActivityIndicator size="small" />
-          </View>
+        }
+      >
+        {isOffline ? (
+          <OfflineBanner cachedLabel={cachedLabel} warning={warning} />
         ) : null}
-      </View>
-    </ScrollView>
+
+        <View style={{ paddingTop: 8 }}>
+          <Section surface={surface} muted={muted}>
+            <NoFilmRow
+              active={activeFilmId === null}
+              foreground={foreground}
+              muted={muted}
+              accent={accent}
+              onPress={() => {
+                if (Platform.OS === 'ios') {
+                  Haptics.selectionAsync().catch(() => { });
+                }
+                setActive(null);
+              }}
+            />
+          </Section>
+
+          {isLoading ? (
+            <View style={{ paddingVertical: 60, alignItems: 'center' }}>
+              <ActivityIndicator color={accent} />
+            </View>
+          ) : error && !films?.length ? (
+            <ErrorState
+              error={error}
+              onRetry={handleRefresh}
+              danger={danger}
+              accent={accent}
+              accentForeground={accentForeground}
+              muted={muted}
+            />
+          ) : filtered.length === 0 ? (
+            <EmptyState search={search} muted={muted} />
+          ) : (
+            sections.map((section) => (
+              <Section
+                key={section.key}
+                title={section.title}
+                icon={section.icon}
+                iconColor={section.iconColor}
+                count={section.films.length}
+                surface={surface}
+                muted={muted}
+              >
+                {section.films.map((film, i) => (
+                  <View key={film.id}>
+                    <FilmListItem
+                      film={film}
+                      active={activeFilmId === film.id}
+                    />
+                    {i < section.films.length - 1 ? (
+                      <RowSeparator color={separator} />
+                    ) : null}
+                  </View>
+                ))}
+              </Section>
+            ))
+          )}
+
+          {films?.length && isValidating && !refreshing ? (
+            <View style={{ paddingVertical: 16, alignItems: 'center' }}>
+              <ActivityIndicator size="small" color={accent} />
+            </View>
+          ) : null}
+        </View>
+      </ScrollView>
+    </>
   );
 }
 
@@ -206,12 +228,16 @@ function Section({
   iconColor,
   count,
   children,
+  surface,
+  muted,
 }: {
   title?: string;
   icon?: SFSymbol;
   iconColor?: string;
   count?: number;
   children: React.ReactNode;
+  surface: string;
+  muted: string;
 }) {
   return (
     <View style={{ marginTop: title ? 24 : 12 }}>
@@ -226,19 +252,15 @@ function Section({
           }}
         >
           {icon ? (
-            <SfIcon
-              name={icon}
-              size={13}
-              color={iconColor ?? 'rgba(255,255,255,0.6)'}
-            />
+            <SfIcon name={icon} size={13} color={iconColor ?? muted} />
           ) : null}
           <Text
             style={{
               fontSize: 13,
-              fontWeight: '600',
+              fontFamily: 'Rubik_600SemiBold',
               letterSpacing: 0.4,
               textTransform: 'uppercase',
-              color: 'rgba(255,255,255,0.6)',
+              color: muted,
             }}
           >
             {title}
@@ -248,7 +270,7 @@ function Section({
               style={{
                 marginLeft: 'auto',
                 fontSize: 13,
-                color: 'rgba(255,255,255,0.4)',
+                color: muted,
                 fontVariant: ['tabular-nums'],
               }}
             >
@@ -260,7 +282,7 @@ function Section({
       <View
         style={{
           marginHorizontal: 12,
-          backgroundColor: 'rgba(255,255,255,0.04)',
+          backgroundColor: surface,
           borderRadius: 16,
           borderCurve: 'continuous',
           overflow: 'hidden',
@@ -272,12 +294,12 @@ function Section({
   );
 }
 
-function RowSeparator() {
+function RowSeparator({ color }: { color: string }) {
   return (
     <View
       style={{
         height: 0.5,
-        backgroundColor: 'rgba(255,255,255,0.08)',
+        backgroundColor: color,
         marginLeft: 84,
       }}
     />
@@ -287,9 +309,15 @@ function RowSeparator() {
 function NoFilmRow({
   active,
   onPress,
+  foreground,
+  muted,
+  accent,
 }: {
   active: boolean;
   onPress: () => void;
+  foreground: string;
+  muted: string;
+  accent: string;
 }) {
   return (
     <Pressable
@@ -318,14 +346,14 @@ function NoFilmRow({
             justifyContent: 'center',
           }}
         >
-          <SfIcon name="circle.slash" size={22} color="#888" fallback="∅" />
+          <SfIcon name="circle.slash" size={22} color={muted} fallback="∅" />
         </View>
         <View style={{ flex: 1 }}>
           <Text
             style={{
               fontSize: 16,
-              fontWeight: '600',
-              color: '#fff',
+              fontFamily: 'Rubik_600SemiBold',
+              color: foreground,
             }}
           >
             No Film
@@ -333,9 +361,8 @@ function NoFilmRow({
           <Text
             style={{
               fontSize: 13,
-              opacity: 0.55,
               marginTop: 2,
-              color: '#fff',
+              color: muted,
             }}
           >
             Capture without a LUT
@@ -344,7 +371,7 @@ function NoFilmRow({
         {active ? (
           <SfIcon
             name="checkmark.circle.fill"
-            color="#FFD60A"
+            color={accent}
             size={22}
             fallback="✓"
           />
@@ -354,7 +381,13 @@ function NoFilmRow({
   );
 }
 
-function OfflineBanner({ cachedLabel }: { cachedLabel: string | null }) {
+function OfflineBanner({
+  cachedLabel,
+  warning,
+}: {
+  cachedLabel: string | null;
+  warning: string;
+}) {
   return (
     <View
       style={{
@@ -370,16 +403,23 @@ function OfflineBanner({ cachedLabel }: { cachedLabel: string | null }) {
         gap: 10,
       }}
     >
-      <SfIcon name="wifi.slash" size={16} color="#FF9F0A" fallback="!" />
+      <SfIcon name="wifi.slash" size={16} color={warning} fallback="!" />
       <View style={{ flex: 1 }}>
-        <Text style={{ fontSize: 13, fontWeight: '600', color: '#FF9F0A' }}>
+        <Text
+          style={{
+            fontSize: 13,
+            fontFamily: 'Rubik_600SemiBold',
+            color: warning,
+          }}
+        >
           Offline — showing cached films
         </Text>
         {cachedLabel ? (
           <Text
             style={{
               fontSize: 12,
-              color: 'rgba(255,159,10,0.75)',
+              color: warning,
+              opacity: 0.75,
               marginTop: 2,
             }}
           >
@@ -394,9 +434,17 @@ function OfflineBanner({ cachedLabel }: { cachedLabel: string | null }) {
 function ErrorState({
   error,
   onRetry,
+  danger,
+  accent,
+  accentForeground,
+  muted,
 }: {
   error: Error;
   onRetry: () => void;
+  danger: string;
+  accent: string;
+  accentForeground: string;
+  muted: string;
 }) {
   return (
     <View
@@ -411,12 +459,12 @@ function ErrorState({
         gap: 12,
       }}
     >
-      <SfIcon name="exclamationmark.triangle" size={28} color="#FF453A" />
+      <SfIcon name="exclamationmark.triangle" size={28} color={danger} />
       <Text
         style={{
           fontSize: 15,
-          fontWeight: '600',
-          color: '#FF453A',
+          fontFamily: 'Rubik_600SemiBold',
+          color: danger,
           textAlign: 'center',
         }}
         selectable
@@ -424,11 +472,7 @@ function ErrorState({
         Couldn’t load films
       </Text>
       <Text
-        style={{
-          fontSize: 13,
-          color: 'rgba(255,255,255,0.65)',
-          textAlign: 'center',
-        }}
+        style={{ fontSize: 13, color: muted, textAlign: 'center' }}
         selectable
       >
         {String(error.message ?? error)}
@@ -441,17 +485,24 @@ function ErrorState({
           paddingVertical: 10,
           borderRadius: 999,
           borderCurve: 'continuous',
-          backgroundColor: '#FFD60A',
+          backgroundColor: accent,
           opacity: pressed ? 0.8 : 1,
         })}
       >
-        <Text style={{ color: '#000', fontWeight: '700' }}>Try again</Text>
+        <Text
+          style={{
+            color: accentForeground,
+            fontFamily: 'Rubik_700Bold',
+          }}
+        >
+          Try again
+        </Text>
       </Pressable>
     </View>
   );
 }
 
-function EmptyState({ search }: { search: string }) {
+function EmptyState({ search, muted }: { search: string; muted: string }) {
   return (
     <View
       style={{
@@ -460,17 +511,12 @@ function EmptyState({ search }: { search: string }) {
         gap: 8,
       }}
     >
-      <SfIcon
-        name="film.stack"
-        size={36}
-        color="rgba(255,255,255,0.35)"
-        fallback="◼︎"
-      />
+      <SfIcon name="film.stack" size={36} color={muted} fallback="◼︎" />
       <Text
         style={{
-          color: 'rgba(255,255,255,0.55)',
+          color: muted,
           fontSize: 15,
-          fontWeight: '500',
+          fontFamily: 'Rubik_500Medium',
         }}
       >
         {search ? `No results for “${search}”` : 'No films available'}

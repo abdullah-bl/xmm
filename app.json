@@ -4,29 +4,37 @@
     "slug": "xmm",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/appstore.png",
+    "icon": "./assets/icon.png",
     "scheme": "aura",
-    // "userInterfaceStyle": "dark",
+    "userInterfaceStyle": "dark",
     "jsEngine": "hermes",
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "bl.abdullah.xmm",
+      "buildNumber": "1",
       "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false,
+        "UIRequiresFullScreen": true,
         "NSCameraUsageDescription": "$(PRODUCT_NAME) needs access to your Camera to capture photos and videos.",
         "NSMicrophoneUsageDescription": "$(PRODUCT_NAME) needs access to your Microphone to record audio for video recordings.",
-        "NSPhotoLibraryAddUsageDescription": "$(PRODUCT_NAME) needs to save your captured photos to your photo library."
+        "NSPhotoLibraryUsageDescription": "$(PRODUCT_NAME) needs access to your photo library so you can pick existing photos to view or share.",
+        "NSPhotoLibraryAddUsageDescription": "$(PRODUCT_NAME) needs to save your captured photos to your photo library.",
+        "NSLocationWhenInUseUsageDescription": "$(PRODUCT_NAME) embeds your location in photos when Embed Location is enabled in Settings."
       }
     },
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#000000",
-        "foregroundImage": "./assets/appstore.png"
+        "foregroundImage": "./assets/adaptive-icon.png"
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
+      "versionCode": 1,
       "permissions": [
         "android.permission.RECORD_AUDIO",
-        "android.permission.MODIFY_AUDIO_SETTINGS"
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION"
       ]
     },
     "web": {
@@ -79,7 +87,19 @@
       "expo-image",
       "expo-web-browser",
       "expo-asset",
-      "expo-sqlite"
+      "expo-sqlite",
+      [
+        "react-native-share",
+        {
+          "ios": [
+            "instagram",
+            "instagram-stories"
+          ],
+          "android": [
+            "com.instagram.android"
+          ]
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
@@ -95,7 +115,9 @@
       "policy": "appVersion"
     },
     "updates": {
-      "url": "https://u.expo.dev/591b385f-9ebb-4328-8b89-b8fa1a95a6c0"
+      "url": "https://u.expo.dev/591b385f-9ebb-4328-8b89-b8fa1a95a6c0",
+      "checkAutomatically": "ON_LOAD",
+      "fallbackToCacheTimeout": 0
     }
   }
 }

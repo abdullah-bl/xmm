@@ -4,6 +4,7 @@ import { Link, router } from 'expo-router';
 import { Platform, Pressable, Text, View } from 'react-native';
 
 import { SfIcon } from '@/components/camera/sf-icon';
+import { useThemeColor } from '@/hooks/useThemeColor';
 import { sampleUrlForFilm } from '@/lib/pb-files';
 import { useFilmStore } from '@/stores/film-store';
 import type { FilmsResponse } from '@/types/backend.types';
@@ -23,16 +24,20 @@ export function FilmListItem({ film, active }: FilmListItemProps) {
   const toggleFavorite = useFilmStore((s) => s.toggleFavorite);
   const setActive = useFilmStore((s) => s.setActive);
 
+  const foreground = useThemeColor('foreground');
+  const muted = useThemeColor('muted');
+  const accent = useThemeColor('accent');
+
   const handleToggleFavorite = () => {
     if (Platform.OS === 'ios') {
-      Haptics.selectionAsync().catch(() => {});
+      Haptics.selectionAsync().catch(() => { });
     }
     toggleFavorite(film.id);
   };
 
   const handleUse = () => {
     if (Platform.OS === 'ios') {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => { });
     }
     setActive(film.id);
   };
@@ -87,9 +92,9 @@ export function FilmListItem({ film, active }: FilmListItemProps) {
                 >
                   <Text
                     style={{
-                      color: '#FFD60A',
+                      color: accent,
                       fontSize: 9,
-                      fontWeight: '700',
+                      fontFamily: 'Rubik_700Bold',
                       letterSpacing: 0.4,
                     }}
                   >
@@ -111,8 +116,8 @@ export function FilmListItem({ film, active }: FilmListItemProps) {
                   numberOfLines={1}
                   style={{
                     fontSize: 16,
-                    fontWeight: '600',
-                    color: '#fff',
+                    fontFamily: 'Rubik_600SemiBold',
+                    color: foreground,
                     flexShrink: 1,
                   }}
                 >
@@ -121,7 +126,7 @@ export function FilmListItem({ film, active }: FilmListItemProps) {
                 {isFavorite ? (
                   <SfIcon
                     name="star.fill"
-                    color="#FFD60A"
+                    color={accent}
                     size={11}
                     fallback="★"
                   />
@@ -132,8 +137,8 @@ export function FilmListItem({ film, active }: FilmListItemProps) {
                   numberOfLines={1}
                   style={{
                     fontSize: 12,
-                    color: 'rgba(255,255,255,0.55)',
-                    fontWeight: '500',
+                    color: muted,
+                    fontFamily: 'Rubik_500Medium',
                   }}
                 >
                   {film.category}
@@ -164,7 +169,7 @@ export function FilmListItem({ film, active }: FilmListItemProps) {
             >
               <SfIcon
                 name={isFavorite ? 'star.fill' : 'star'}
-                color={isFavorite ? '#FFD60A' : 'rgba(255,255,255,0.45)'}
+                color={isFavorite ? accent : muted}
                 size={18}
                 fallback={isFavorite ? '★' : '☆'}
               />
@@ -173,7 +178,7 @@ export function FilmListItem({ film, active }: FilmListItemProps) {
             {active ? (
               <SfIcon
                 name="checkmark.circle.fill"
-                color="#FFD60A"
+                color={accent}
                 size={22}
                 fallback="✓"
               />

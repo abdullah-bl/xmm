@@ -1,3 +1,4 @@
+import Constants from 'expo-constants';
 import * as Haptics from 'expo-haptics';
 import * as MediaLibrary from 'expo-media-library';
 import { Stack } from 'expo-router';
@@ -431,7 +432,7 @@ export default function CameraScreen() {
           padding: 24,
         }}
       >
-        <Stack.Screen options={{ headerShown: false }} />
+        <Stack.Header hidden />
         <Text
           style={{
             color: '#fff',
@@ -451,7 +452,8 @@ export default function CameraScreen() {
             marginBottom: 24,
           }}
         >
-          Lura needs access to your camera to capture photos.
+          {Constants.expoConfig?.name ?? 'The app'} needs access to your camera
+          to capture photos.
         </Text>
         <Pressable
           onPress={requestPermission}
@@ -472,12 +474,10 @@ export default function CameraScreen() {
   }
 
   return (
-    <View className='flex-1 bg-black'>
-      <Stack.Screen options={{ headerShown: false }} />
+    <View className='flex-1 bg-black' style={{ paddingTop: insets.top + 8 }}>
+      <Stack.Header hidden />
       <StatusBar hidden />
-      <View style={{ paddingTop: insets.top + 8 }} className='py-4'>
-        <TopBar />
-      </View>
+
 
       <View className='flex-1 bg-black overflow-hidden rounded-3xl'>
         {device ? (
@@ -497,6 +497,9 @@ export default function CameraScreen() {
                 enableSmoothAutoFocus={smoothAutoFocus}
                 style={StyleSheet.absoluteFill}
               />
+              <View className='py-4'>
+                <TopBar />
+              </View>
               <FocusReticle
                 point={focusPointSV}
                 opacity={focusOpacitySV}

@@ -14,8 +14,10 @@ import {
 import { SfIcon } from '@/components/camera/sf-icon';
 import { useCachedLut } from '@/hooks/use-cached-lut';
 import { useFilm } from '@/hooks/use-films';
+import { useThemeColor } from '@/hooks/useThemeColor';
 import { sampleUrlForFilm } from '@/lib/pb-files';
 import { useFilmStore } from '@/stores/film-store';
+
 
 export default function FilmDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -31,12 +33,22 @@ export default function FilmDetailScreen() {
   const toggleFavorite = useFilmStore((s) => s.toggleFavorite);
   const { width } = useWindowDimensions();
 
+  const background = useThemeColor('background');
+  const foreground = useThemeColor('foreground');
+  const surface = useThemeColor('surface');
+  const muted = useThemeColor('muted');
+  const accent = useThemeColor('accent');
+  const accentForeground = useThemeColor('accent-foreground');
+  const warning = useThemeColor('warning');
+  const success = useThemeColor('success');
+  const danger = useThemeColor('danger');
+
   const isActive = activeFilmId === film?.id;
 
   const handleUse = () => {
     if (!film) return;
     if (Platform.OS === 'ios') {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => { });
     }
     setActive(film.id);
     router.back();
@@ -45,7 +57,7 @@ export default function FilmDetailScreen() {
   const handleToggleFavorite = () => {
     if (!film) return;
     if (Platform.OS === 'ios') {
-      Haptics.selectionAsync().catch(() => {});
+      Haptics.selectionAsync().catch(() => { });
     }
     toggleFavorite(film.id);
   };
@@ -56,38 +68,25 @@ export default function FilmDetailScreen() {
   return (
     <ScrollView
       contentInsetAdjustmentBehavior="automatic"
-      style={{ flex: 1 }}
+      style={{ flex: 1, backgroundColor: background }}
       contentContainerStyle={{ paddingBottom: 32 }}
     >
-      <Stack.Screen
-        options={{
-          title: film?.name ?? 'Film',
-          headerLargeTitle: false,
-          headerRight: film
-            ? () => (
-                <Pressable
-                  onPress={handleToggleFavorite}
-                  hitSlop={10}
-                  accessibilityRole="button"
-                  accessibilityLabel={
-                    isFavorite ? 'Remove from favorites' : 'Add to favorites'
-                  }
-                  style={({ pressed }) => ({ opacity: pressed ? 0.55 : 1 })}
-                >
-                  <SfIcon
-                    name={isFavorite ? 'star.fill' : 'star'}
-                    color={isFavorite ? '#FFD60A' : '#fff'}
-                    size={20}
-                    fallback={isFavorite ? '★' : '☆'}
-                  />
-                </Pressable>
-              )
-            : undefined,
-        }}
-      />
+      <Stack.Screen.Title>{film?.name ?? 'Film'}</Stack.Screen.Title>
+      {film ? (
+        <Stack.Toolbar placement="right">
+          <Stack.Toolbar.Button
+            icon={isFavorite ? 'star.fill' : 'star'}
+            tintColor={isFavorite ? accent : foreground}
+            onPress={handleToggleFavorite}
+            accessibilityLabel={
+              isFavorite ? 'Remove from favorites' : 'Add to favorites'
+            }
+          />
+        </Stack.Toolbar>
+      ) : null}
       {isLoading || !film ? (
         <View style={{ paddingVertical: 40, alignItems: 'center' }}>
-          <ActivityIndicator />
+          <ActivityIndicator color={accent} />
         </View>
       ) : (
         <View style={{ paddingHorizontal: 16, gap: 16 }}>
@@ -107,10 +106,16 @@ export default function FilmDetailScreen() {
               <SfIcon
                 name="wifi.slash"
                 size={14}
-                color="#FF9F0A"
+                color={warning}
                 fallback="!"
               />
-              <Text style={{ fontSize: 12, color: '#FF9F0A', fontWeight: '600' }}>
+              <Text
+                style={{
+                  fontSize: 12,
+                  color: warning,
+                  fontFamily: 'Rubik_600SemiBold',
+                }}
+              >
                 Offline — showing cached details
               </Text>
             </View>
@@ -124,11 +129,15 @@ export default function FilmDetailScreen() {
                     paddingHorizontal: 10,
                     paddingVertical: 4,
                     borderRadius: 999,
-                    backgroundColor: 'rgba(127,127,127,0.18)',
+                    backgroundColor: surface,
                   }}
                 >
                   <Text
-                    style={{ fontSize: 12, fontWeight: '600', color: '#fff' }}
+                    style={{
+                      fontSize: 12,
+                      fontFamily: 'Rubik_600SemiBold',
+                      color: foreground,
+                    }}
                   >
                     {film.category}
                   </Text>
@@ -149,14 +158,14 @@ export default function FilmDetailScreen() {
                   <SfIcon
                     name="sparkles"
                     size={11}
-                    color="#FFD60A"
+                    color={accent}
                     fallback="✦"
                   />
                   <Text
                     style={{
                       fontSize: 12,
-                      fontWeight: '700',
-                      color: '#FFD60A',
+                      fontFamily: 'Rubik_700Bold',
+                      color: accent,
                     }}
                   >
                     Featured
@@ -171,7 +180,8 @@ export default function FilmDetailScreen() {
               style={{
                 fontSize: 15,
                 lineHeight: 22,
-                color: 'rgba(255,255,255,0.85)',
+                color: foreground,
+                opacity: 0.85,
               }}
               selectable
             >
@@ -195,7 +205,7 @@ export default function FilmDetailScreen() {
                     width: sampleSize,
                     height: sampleSize,
                     borderRadius: 12,
-                    backgroundColor: 'rgba(127,127,127,0.18)',
+                    backgroundColor: surface,
                   }}
                   contentFit="cover"
                   transition={150}
@@ -211,14 +221,14 @@ export default function FilmDetailScreen() {
               padding: 16,
               borderRadius: 16,
               borderCurve: 'continuous',
-              backgroundColor: 'rgba(127,127,127,0.12)',
+              backgroundColor: surface,
             }}
           >
             <Text
               style={{
                 fontSize: 13,
-                fontWeight: '600',
-                color: 'rgba(255,255,255,0.7)',
+                fontFamily: 'Rubik_600SemiBold',
+                color: muted,
                 letterSpacing: 0.5,
               }}
             >
@@ -228,8 +238,8 @@ export default function FilmDetailScreen() {
               style={{
                 marginTop: 4,
                 fontSize: 28,
-                fontWeight: '700',
-                color: '#fff',
+                fontFamily: 'Rubik_700Bold',
+                color: foreground,
                 fontVariant: ['tabular-nums'],
               }}
             >
@@ -249,7 +259,7 @@ export default function FilmDetailScreen() {
                     key={value}
                     onPress={() => {
                       if (Platform.OS === 'ios') {
-                        Haptics.selectionAsync().catch(() => {});
+                        Haptics.selectionAsync().catch(() => { });
                       }
                       setIntensity(value);
                     }}
@@ -259,7 +269,7 @@ export default function FilmDetailScreen() {
                       borderRadius: 999,
                       borderCurve: 'continuous',
                       backgroundColor: selected
-                        ? '#FFD60A'
+                        ? accent
                         : 'rgba(127,127,127,0.18)',
                       opacity: pressed ? 0.7 : 1,
                     })}
@@ -267,8 +277,8 @@ export default function FilmDetailScreen() {
                     <Text
                       style={{
                         textAlign: 'center',
-                        fontWeight: '700',
-                        color: selected ? '#000' : '#fff',
+                        fontFamily: 'Rubik_700Bold',
+                        color: selected ? accentForeground : foreground,
                       }}
                     >
                       {Math.round(value * 100)}%
@@ -287,7 +297,7 @@ export default function FilmDetailScreen() {
                 paddingVertical: 14,
                 borderRadius: 14,
                 borderCurve: 'continuous',
-                backgroundColor: '#FFD60A',
+                backgroundColor: accent,
                 alignItems: 'center',
                 justifyContent: 'center',
                 flexDirection: 'row',
@@ -298,11 +308,17 @@ export default function FilmDetailScreen() {
             >
               <SfIcon
                 name={isActive ? 'checkmark.circle.fill' : 'sparkles'}
-                color="#000"
+                color={accentForeground}
                 size={18}
                 fallback={isActive ? '✓' : '✦'}
               />
-              <Text style={{ color: '#000', fontWeight: '700', fontSize: 15 }}>
+              <Text
+                style={{
+                  color: accentForeground,
+                  fontFamily: 'Rubik_700Bold',
+                  fontSize: 15,
+                }}
+              >
                 {isActive ? 'In use' : 'Use this film'}
               </Text>
             </Pressable>
@@ -313,7 +329,7 @@ export default function FilmDetailScreen() {
                 paddingVertical: 14,
                 borderRadius: 14,
                 borderCurve: 'continuous',
-                backgroundColor: 'rgba(127,127,127,0.18)',
+                backgroundColor: surface,
                 alignItems: 'center',
                 justifyContent: 'center',
                 opacity: pressed ? 0.7 : 1,
@@ -325,7 +341,7 @@ export default function FilmDetailScreen() {
             >
               <SfIcon
                 name={isFavorite ? 'star.fill' : 'star'}
-                color={isFavorite ? '#FFD60A' : '#fff'}
+                color={isFavorite ? accent : foreground}
                 size={20}
                 fallback={isFavorite ? '★' : '☆'}
               />
@@ -347,13 +363,13 @@ export default function FilmDetailScreen() {
                 borderRadius: 3,
                 backgroundColor:
                   lutState.status === 'ready'
-                    ? '#34C759'
+                    ? success
                     : lutState.status === 'error'
-                      ? '#FF3B30'
-                      : '#FF9F0A',
+                      ? danger
+                      : warning,
               }}
             />
-            <Text style={{ fontSize: 12, color: 'rgba(255,255,255,0.7)' }}>
+            <Text style={{ fontSize: 12, color: muted }}>
               {lutState.status === 'ready'
                 ? 'LUT cached locally'
                 : lutState.status === 'downloading'

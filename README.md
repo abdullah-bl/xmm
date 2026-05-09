@@ -1,40 +1,37 @@
-# Welcome to your Expo app 👋
+# xmm
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+A native iOS/Android camera app built on Expo and react-native-vision-camera, with a backend-served catalog of film LUTs (PocketBase) and over-the-air delivery via EAS Updates. The UI is locked to dark mode, uses Rubik (Google Fonts) throughout, and follows Apple Human Interface Guidelines on iOS via `@expo/ui/swift-ui` for Settings.
 
-## Get started
+## Stack
 
-1. Install dependencies
+- Expo SDK 55, Expo Router, Hermes
+- react-native-vision-camera (+ Skia for LUT preview), expo-image
+- Uniwind (Tailwind v4 for React Native) with theme tokens in `global.css`
+- Zustand for camera/film stores, SWR + expo-sqlite/localStorage for film cache
+- PocketBase backend (films, metrics, feedback collections)
 
-   ```bash
-   npm install
-   ```
+## Develop
 
-2. Start the app
+```bash
+bun install
+bun start            # Metro
+bun ios              # custom dev client (vision-camera needs native code)
+bun android
+```
 
-   ```bash
-   npx expo start
-   ```
+Set `EXPO_PUBLIC_POCKETBASE_URL` in `.env.local` (already wired for the production backend).
 
-In the output, you'll find options to open the app in a
+## Routes
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Learn more
-
-To learn more about developing your project with Expo, look at the following resources:
-
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
-
-## Join the community
-
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+```
+app/
+  _layout.tsx                # fonts + theme lock + EAS Updates check
+  (root)/
+    _layout.tsx              # shared Stack screenOptions (HIG-style headers)
+    index.tsx                # camera viewfinder
+    gallery.tsx, gallery/[id].tsx
+    films.tsx,   films/[id].tsx
+    settings.tsx             # Capture / Feedback / About
+    feedback.tsx             # form sheet → POST /api/collections/feedback
+    privacy.tsx, terms.tsx
+```

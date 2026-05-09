@@ -10,6 +10,7 @@
     "lint": "expo lint"
   },
   "dependencies": {
+    "@expo-google-fonts/rubik": "^0.4.2",
     "@expo/ui": "~55.0.15",
     "@expo/vector-icons": "^15.0.3",
     "@react-navigation/bottom-tabs": "^7.4.0",
@@ -19,6 +20,8 @@
     "expo": "^55.0.23",
     "expo-asset": "~55.0.17",
     "expo-audio": "~55.0.14",
+    "expo-build-properties": "^55.0.13",
+    "expo-clipboard": "^55.0.13",
     "expo-constants": "~55.0.16",
     "expo-dev-client": "~55.0.32",
     "expo-device": "~55.0.16",
@@ -30,6 +33,7 @@
     "expo-linking": "~55.0.15",
     "expo-location": "~55.1.9",
     "expo-media-library": "~55.0.16",
+    "expo-notifications": "~55.0.22",
     "expo-router": "~55.0.14",
     "expo-sharing": "~55.0.18",
     "expo-splash-screen": "~55.0.20",
@@ -51,6 +55,7 @@
     "react-native-reanimated": "4.3.0",
     "react-native-safe-area-context": "~5.6.0",
     "react-native-screens": "~4.23.0",
+    "react-native-share": "^12.3.1",
     "react-native-vision-camera": "^5.0.9",
     "react-native-vision-camera-skia": "^5.0.9",
     "react-native-web": "~0.21.0",

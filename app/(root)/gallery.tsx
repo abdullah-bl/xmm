@@ -10,20 +10,24 @@ import {
 } from 'react-native';
 
 import { useGallery } from '@/hooks/use-gallery';
+import { useThemeColor } from '@/hooks/useThemeColor';
 
 const COLUMNS = 3;
 
 export default function GalleryScreen() {
   const { photos } = useGallery();
   const { width } = useWindowDimensions();
+  const background = useThemeColor('background');
+  const muted = useThemeColor('muted');
+  const surface = useThemeColor('surface');
   const cellSize = useMemo(() => (width - (COLUMNS + 1) * 2) / COLUMNS, [width]);
 
   return (
     <>
-      <Stack.Screen options={{ title: 'Gallery', headerLargeTitle: true }} />
+      <Stack.Screen.Title large>Gallery</Stack.Screen.Title>
       <FlatList
         contentInsetAdjustmentBehavior="automatic"
-        style={{ backgroundColor: '#000' }}
+        style={{ backgroundColor: background }}
         data={photos}
         keyExtractor={(photo) => photo.id}
         numColumns={COLUMNS}
@@ -34,9 +38,7 @@ export default function GalleryScreen() {
         removeClippedSubviews
         ListEmptyComponent={
           <View style={{ paddingVertical: 60, alignItems: 'center' }}>
-            <Text style={{ color: 'rgba(255,255,255,0.6)' }}>
-              No photos yet
-            </Text>
+            <Text style={{ color: muted }}>No photos yet</Text>
           </View>
         }
         renderItem={({ item }) => (
@@ -53,7 +55,7 @@ export default function GalleryScreen() {
                 style={{
                   width: cellSize,
                   height: cellSize,
-                  backgroundColor: 'rgba(127,127,127,0.18)',
+                  backgroundColor: surface,
                 }}
                 contentFit="cover"
                 transition={120}

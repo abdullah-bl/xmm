@@ -1,2 +1,61 @@
 @import 'tailwindcss';
 @import 'uniwind';
+
+@theme {
+  --font-sans: Rubik_400Regular;
+  --font-sans-medium: Rubik_500Medium;
+  --font-sans-semibold: Rubik_600SemiBold;
+  --font-sans-bold: Rubik_700Bold;
+}
+
+@layer theme {
+  :root {
+    @variant light {
+      --color-background: oklch(99% 0 0);
+      --color-foreground: oklch(15% 0 0);
+      --color-surface: oklch(96% 0 0);
+      --color-surface-foreground: oklch(15% 0 0);
+      --color-overlay: oklch(0% 0 0 / 0.45);
+      --color-overlay-foreground: oklch(98% 0 0);
+      --color-muted: oklch(55% 0 0);
+      --color-accent: oklch(86% 0.165 95);
+      --color-accent-foreground: oklch(15% 0 0);
+      --color-default: oklch(94% 0 0);
+      --color-default-foreground: oklch(15% 0 0);
+      --color-success: oklch(70% 0.18 145);
+      --color-success-foreground: oklch(15% 0 0);
+      --color-warning: oklch(75% 0.18 75);
+      --color-warning-foreground: oklch(15% 0 0);
+      --color-danger: oklch(60% 0.22 27);
+      --color-danger-foreground: oklch(98% 0 0);
+      --color-border: oklch(90% 0 0);
+      --color-separator: oklch(85% 0 0);
+      --color-focus: oklch(86% 0.165 95);
+      --color-link: oklch(55% 0.18 250);
+    }
+
+    @variant dark {
+      --color-background: oklch(0% 0 0);
+      --color-foreground: oklch(98% 0 0);
+      --color-surface: oklch(14% 0 0);
+      --color-surface-foreground: oklch(95% 0 0);
+      --color-overlay: oklch(0% 0 0 / 0.55);
+      --color-overlay-foreground: oklch(98% 0 0);
+      --color-muted: oklch(60% 0 0);
+      --color-accent: oklch(86% 0.165 95);
+      --color-accent-foreground: oklch(15% 0 0);
+      --color-default: oklch(20% 0 0);
+      --color-default-foreground: oklch(95% 0 0);
+      --color-success: oklch(72% 0.18 145);
+      --color-success-foreground: oklch(15% 0 0);
+      --color-warning: oklch(75% 0.18 75);
+      --color-warning-foreground: oklch(15% 0 0);
+      --color-danger: oklch(65% 0.22 27);
+      --color-danger-foreground: oklch(98% 0 0);
+      --color-border: oklch(22% 0 0);
+      --color-separator: oklch(25% 0 0);
+      --color-focus: oklch(86% 0.165 95);
+      --color-link: oklch(70% 0.16 250);
+    }
+  }
+}
