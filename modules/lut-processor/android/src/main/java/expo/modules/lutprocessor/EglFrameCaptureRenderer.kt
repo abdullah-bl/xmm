@@ -20,9 +20,9 @@ import javax.microedition.khronos.egl.EGLDisplay
 import javax.microedition.khronos.egl.EGLSurface
 
 /**
- * 3D LUT from Iridas/Adobe .cube (ASCII) via OpenGL ES 3 — hardware trilinear on [sampler3D].
+ * Single-pass framed capture: decode → crop → optional LUT → frame composite → one JPEG encode.
  */
-internal object EglCubeLutRenderer {
+internal object EglFrameCaptureRenderer {
   private const val VERT = """#version 300 es
 const vec2 kPos[3] = vec2[3](
   vec2(-1.0, -1.0), vec2(3.0, -1.0), vec2(-1.0, 3.0)
@@ -37,7 +37,24 @@ void main() {
 }
 """
 
-  private const val FRAG = """#version 300 es
+  private const val PASSTHROUGH_FRAG = """#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 oFrag;
+uniform vec2 uCropScale;
+uniform vec2 uCropOffset;
+uniform float uMirror;
+uniform sampler2D uSource;
+void main() {
+  vec2 uv = vUv * uCropScale + uCropOffset;
+  if (uMirror > 0.5) {
+    uv.x = uCropOffset.x + uCropScale.x * (1.0 - vUv.x);
+  }
+  oFrag = vec4(texture(uSource, uv).rgb, 1.0);
+}
+"""
+
+  private const val CUBE_FRAG = """#version 300 es
 precision highp float;
 precision highp sampler2D;
 precision highp sampler3D;
@@ -58,107 +75,181 @@ void main() {
   }
   vec3 src = texture(uSource, uv).rgb;
   vec3 denom = max(uDomainMax - uDomainMin, vec3(1e-8));
-  vec3 p = (src - uDomainMin) / denom;
-  p = clamp(p, 0.0, 1.0);
+  vec3 p = clamp((src - uDomainMin) / denom, 0.0, 1.0);
   vec3 graded = texture(uLut3d, p).rgb;
   oFrag = vec4(mix(src, graded, uIntensity), 1.0);
 }
 """
 
-  fun applyLut(
+  private const val COMPOSITE_FRAG = """#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 oFrag;
+uniform vec4 uCutoutRect;
+uniform sampler2D uPhoto;
+uniform sampler2D uFrame;
+void main() {
+  vec4 frameCol = texture(uFrame, vUv);
+  vec2 cutoutMin = uCutoutRect.xy;
+  vec2 cutoutSize = uCutoutRect.zw;
+  vec2 cutoutMax = cutoutMin + cutoutSize;
+  bool inCutout = all(greaterThanEqual(vUv, cutoutMin)) && all(lessThanEqual(vUv, cutoutMax));
+  vec2 photoUV = (vUv - cutoutMin) / max(cutoutSize, vec2(1e-6));
+  vec3 photo = inCutout ? texture(uPhoto, photoUV).rgb : vec3(0.0);
+  vec3 outRgb = mix(photo, frameCol.rgb, frameCol.a);
+  oFrag = vec4(outRgb, 1.0);
+}
+"""
+
+  fun process(
     imagePath: String,
-    cubePath: String,
+    framePath: String,
+    lutPath: String?,
     intensity: Float,
-    aspectRatio: String,
-    cropAspectRatio: Float? = null,
     mirror: Boolean,
     ctx: Context,
     jpegQuality: Int = 95,
   ): String {
-    val cube = try {
-      CubeLutParser.parseFile(cubePath)
-    } catch (e: Exception) {
-      throw IllegalStateException("Invalid or unreadable .cube: ${e.message}", e)
-    }
-    val n = cube.size
+    val cutout = FrameAnalysis.analyze(framePath)
     val sourceBmp = SourceImageLoader.decodeUprightBitmap(imagePath)
+    val frameBmp = BitmapFactory.decodeFile(framePath)
+      ?: throw IllegalArgumentException("Could not load frame image: $framePath)
+
     val crop = CropMath.centreCrop(
       sourceBmp.width,
       sourceBmp.height,
-      CropMath.resolveTargetRatio(
-        aspectRatio,
-        cropAspectRatio,
-        sourceBmp.width,
-        sourceBmp.height,
-      ),
+      CropMath.cutoutAspectRatio(cutout),
     )
-    val outW = crop.width
-    val outH = crop.height
+    val photoW = cutout.width
+    val photoH = cutout.height
+    val outW = cutout.frameWidth
+    val outH = cutout.frameHeight
+
     val egl = EglState()
     return try {
       egl.makeCurrent()
-      val program = buildProgram()
-      val uDomainMin = GLES30.glGetUniformLocation(program, "uDomainMin")
-      val uDomainMax = GLES30.glGetUniformLocation(program, "uDomainMax")
-      val uIntensity = GLES30.glGetUniformLocation(program, "uIntensity")
-      val uSource = GLES30.glGetUniformLocation(program, "uSource")
-      val uLut3d = GLES30.glGetUniformLocation(program, "uLut3d")
-      val uCropScale = GLES30.glGetUniformLocation(program, "uCropScale")
-      val uCropOffset = GLES30.glGetUniformLocation(program, "uCropOffset")
-      val uMirror = GLES30.glGetUniformLocation(program, "uMirror")
-      val fbo = intArrayOf(0)
-      val colorTex = intArrayOf(0)
-      val sourceTex = intArrayOf(0)
-      val lut3d = intArrayOf(0)
-      val vao = intArrayOf(0)
+      val vao = IntArray(1)
       GLES30.glGenVertexArrays(1, vao, 0)
       GLES30.glBindVertexArray(vao[0])
+
+      val fbo = IntArray(1)
+      val photoTex = IntArray(1)
+      val frameTex = IntArray(1)
+      val sourceTex = IntArray(1)
+      val outputTex = IntArray(1)
+      val lut3d = IntArray(1)
       GLES30.glGenFramebuffers(1, fbo, 0)
-      GLES30.glGenTextures(1, colorTex, 0)
+      GLES30.glGenTextures(1, photoTex, 0)
+      GLES30.glGenTextures(1, frameTex, 0)
       GLES30.glGenTextures(1, sourceTex, 0)
+      GLES30.glGenTextures(1, outputTex, 0)
       GLES30.glGenTextures(1, lut3d, 0)
+
+      val photoProgram = buildProgram(PASSTHROUGH_FRAG)
+      val compositeProgram = buildProgram(COMPOSITE_FRAG)
+      var cubeProgram = 0
+      var cube: CubeLutData? = null
+
       try {
-        initRgbaTexture2D(colorTex[0], outW, outH)
+        initRgbaTexture2D(sourceTex[0], sourceBmp.width, sourceBmp.height)
         GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, sourceTex[0])
         GLUtils.texImage2D(GLES30.GL_TEXTURE_2D, 0, sourceBmp, 0)
-        checkGl("texImage2D source (cube path)")
         bindLinearClamp2d(sourceTex[0])
-        GLES30.glBindTexture(GLES30.GL_TEXTURE_3D, lut3d[0])
-        val buf: Buffer = ByteBuffer.wrap(cube.rgba8).order(ByteOrder.nativeOrder())
-        GLES30.glPixelStorei(GLES30.GL_UNPACK_ALIGNMENT, 1)
-        GLES30.glTexImage3D(
-          GLES30.GL_TEXTURE_3D, 0, GLES30.GL_RGBA8, n, n, n, 0,
-          GLES30.GL_RGBA, GLES30.GL_UNSIGNED_BYTE, buf,
-        )
-        checkGl("glTexImage3D")
-        bindLinearClamp3d(lut3d[0])
-        bindLinearClamp2d(colorTex[0])
-        GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, fbo[0])
-        GLES30.glFramebufferTexture2D(
-          GLES30.GL_FRAMEBUFFER, GLES30.GL_COLOR_ATTACHMENT0,
-          GLES30.GL_TEXTURE_2D, colorTex[0], 0,
-        )
-        if (GLES30.glCheckFramebufferStatus(GLES30.GL_FRAMEBUFFER) != GLES30.GL_FRAMEBUFFER_COMPLETE) {
-          throw IllegalStateException("FBO incomplete (cube path)")
+
+        initRgbaTexture2D(frameTex[0], frameBmp.width, frameBmp.height)
+        GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, frameTex[0])
+        GLUtils.texImage2D(GLES30.GL_TEXTURE_2D, 0, frameBmp, 0)
+        bindLinearClamp2d(frameTex[0])
+
+        val useCube = !lutPath.isNullOrEmpty() && lutPath.endsWith(".cube", ignoreCase = true)
+        val activePhotoProgram = if (useCube) {
+          cube = CubeLutParser.parseFile(lutPath!!)
+          cubeProgram = buildProgram(CUBE_FRAG)
+          val n = cube!!.size
+          GLES30.glBindTexture(GLES30.GL_TEXTURE_3D, lut3d[0])
+          val buf: Buffer = ByteBuffer.wrap(cube!!.rgba8).order(ByteOrder.nativeOrder())
+          GLES30.glPixelStorei(GLES30.GL_UNPACK_ALIGNMENT, 1)
+          GLES30.glTexImage3D(
+            GLES30.GL_TEXTURE_3D, 0, GLES30.GL_RGBA8, n, n, n, 0,
+            GLES30.GL_RGBA, GLES30.GL_UNSIGNED_BYTE, buf,
+          )
+          bindLinearClamp3d(lut3d[0])
+          cubeProgram
+        } else {
+          photoProgram
         }
-        GLES30.glViewport(0, 0, outW, outH)
-        GLES30.glUseProgram(program)
+
+        initRgbaTexture2D(photoTex[0], photoW, photoH)
+        bindLinearClamp2d(photoTex[0])
+        bindFbo(fbo[0], photoTex[0], photoW, photoH)
+        GLES30.glUseProgram(activePhotoProgram)
         GLES30.glClearColor(0f, 0f, 0f, 1f)
         GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT)
-        GLES30.glUniform3f(uDomainMin, cube.domainMin[0], cube.domainMin[1], cube.domainMin[2])
-        GLES30.glUniform3f(uDomainMax, cube.domainMax[0], cube.domainMax[1], cube.domainMax[2])
-        GLES30.glUniform1f(uIntensity, intensity)
-        GLES30.glUniform2f(uCropScale, crop.scaleX, crop.scaleY)
-        GLES30.glUniform2f(uCropOffset, crop.offsetX, crop.offsetY)
-        GLES30.glUniform1f(uMirror, if (mirror) 1f else 0f)
+        GLES30.glUniform2f(
+          GLES30.glGetUniformLocation(activePhotoProgram, "uCropScale"),
+          crop.scaleX,
+          crop.scaleY,
+        )
+        GLES30.glUniform2f(
+          GLES30.glGetUniformLocation(activePhotoProgram, "uCropOffset"),
+          crop.offsetX,
+          crop.offsetY,
+        )
+        GLES30.glUniform1f(
+          GLES30.glGetUniformLocation(activePhotoProgram, "uMirror"),
+          if (mirror) 1f else 0f,
+        )
         GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
         GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, sourceTex[0])
-        GLES30.glUniform1i(uSource, 0)
-        GLES30.glActiveTexture(GLES30.GL_TEXTURE1)
-        GLES30.glBindTexture(GLES30.GL_TEXTURE_3D, lut3d[0])
-        GLES30.glUniform1i(uLut3d, 1)
+        GLES30.glUniform1i(GLES30.glGetUniformLocation(activePhotoProgram, "uSource"), 0)
+        if (useCube && cube != null) {
+          GLES30.glUniform3f(
+            GLES30.glGetUniformLocation(activePhotoProgram, "uDomainMin"),
+            cube!!.domainMin[0],
+            cube!!.domainMin[1],
+            cube!!.domainMin[2],
+          )
+          GLES30.glUniform3f(
+            GLES30.glGetUniformLocation(activePhotoProgram, "uDomainMax"),
+            cube!!.domainMax[0],
+            cube!!.domainMax[1],
+            cube!!.domainMax[2],
+          )
+          GLES30.glUniform1f(
+            GLES30.glGetUniformLocation(activePhotoProgram, "uIntensity"),
+            intensity,
+          )
+          GLES30.glActiveTexture(GLES30.GL_TEXTURE1)
+          GLES30.glBindTexture(GLES30.GL_TEXTURE_3D, lut3d[0])
+          GLES30.glUniform1i(GLES30.glGetUniformLocation(activePhotoProgram, "uLut3d"), 1)
+        }
         GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, 3)
-        checkGl("draw cube")
+        checkGl("photo pass")
+
+        initRgbaTexture2D(outputTex[0], outW, outH)
+        bindLinearClamp2d(outputTex[0])
+        bindFbo(fbo[0], outputTex[0], outW, outH)
+        GLES30.glUseProgram(compositeProgram)
+        GLES30.glClearColor(0f, 0f, 0f, 1f)
+        GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT)
+        val fw = cutout.frameWidth.toFloat()
+        val fh = cutout.frameHeight.toFloat()
+        GLES30.glUniform4f(
+          GLES30.glGetUniformLocation(compositeProgram, "uCutoutRect"),
+          cutout.x / fw,
+          cutout.y / fh,
+          cutout.width / fw,
+          cutout.height / fh,
+        )
+        GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
+        GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, photoTex[0])
+        GLES30.glUniform1i(GLES30.glGetUniformLocation(compositeProgram, "uPhoto"), 0)
+        GLES30.glActiveTexture(GLES30.GL_TEXTURE1)
+        GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, frameTex[0])
+        GLES30.glUniform1i(GLES30.glGetUniformLocation(compositeProgram, "uFrame"), 1)
+        GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, 3)
+        checkGl("composite pass")
+
         val bytes = readPixelsRgba(outW, outH)
         val outFile = File.createTempFile("lut_", ".jpg", ctx.cacheDir)
         FileOutputStream(outFile).use { fos ->
@@ -172,33 +263,52 @@ void main() {
       } finally {
         GLES30.glBindVertexArray(0)
         GLES30.glDeleteVertexArrays(1, vao, 0)
-        GLES30.glDeleteProgram(program)
+        GLES30.glDeleteProgram(photoProgram)
+        GLES30.glDeleteProgram(compositeProgram)
+        if (cubeProgram != 0) GLES30.glDeleteProgram(cubeProgram)
         GLES30.glDeleteFramebuffers(1, fbo, 0)
-        GLES30.glDeleteTextures(1, colorTex, 0)
+        GLES30.glDeleteTextures(1, photoTex, 0)
+        GLES30.glDeleteTextures(1, frameTex, 0)
         GLES30.glDeleteTextures(1, sourceTex, 0)
+        GLES30.glDeleteTextures(1, outputTex, 0)
         GLES30.glDeleteTextures(1, lut3d, 0)
         GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, 0)
       }
     } finally {
       sourceBmp.recycle()
+      frameBmp.recycle()
       egl.release()
     }
   }
 
-  private fun bindLinearClamp3d(id: Int) {
-    GLES30.glBindTexture(GLES30.GL_TEXTURE_3D, id)
-    GLES30.glTexParameteri(GLES30.GL_TEXTURE_3D, GLES30.GL_TEXTURE_MIN_FILTER, GLES30.GL_LINEAR)
-    GLES30.glTexParameteri(GLES30.GL_TEXTURE_3D, GLES30.GL_TEXTURE_MAG_FILTER, GLES30.GL_LINEAR)
-    GLES30.glTexParameteri(GLES30.GL_TEXTURE_3D, GLES30.GL_TEXTURE_WRAP_S, GLES30.GL_CLAMP_TO_EDGE)
-    GLES30.glTexParameteri(GLES30.GL_TEXTURE_3D, GLES30.GL_TEXTURE_WRAP_T, GLES30.GL_CLAMP_TO_EDGE)
-    GLES30.glTexParameteri(GLES30.GL_TEXTURE_3D, GLES30.GL_TEXTURE_WRAP_R, GLES30.GL_CLAMP_TO_EDGE)
+  private fun bindFbo(fbo: Int, colorTex: Int, w: Int, h: Int) {
+    GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, fbo)
+    GLES30.glFramebufferTexture2D(
+      GLES30.GL_FRAMEBUFFER,
+      GLES30.GL_COLOR_ATTACHMENT0,
+      GLES30.GL_TEXTURE_2D,
+      colorTex,
+      0,
+    )
+    val status = GLES30.glCheckFramebufferStatus(GLES30.GL_FRAMEBUFFER)
+    if (status != GLES30.GL_FRAMEBUFFER_COMPLETE) {
+      throw IllegalStateException("FBO incomplete: 0x${Integer.toHexString(status)}")
+    }
+    GLES30.glViewport(0, 0, w, h)
   }
 
   private fun initRgbaTexture2D(tex: Int, w: Int, h: Int) {
     GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, tex)
     GLES30.glTexImage2D(
-      GLES30.GL_TEXTURE_2D, 0, GLES30.GL_RGBA, w, h, 0,
-      GLES30.GL_RGBA, GLES30.GL_UNSIGNED_BYTE, null,
+      GLES30.GL_TEXTURE_2D,
+      0,
+      GLES30.GL_RGBA,
+      w,
+      h,
+      0,
+      GLES30.GL_RGBA,
+      GLES30.GL_UNSIGNED_BYTE,
+      null,
     )
   }
 
@@ -208,6 +318,15 @@ void main() {
     GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MAG_FILTER, GLES30.GL_LINEAR)
     GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_WRAP_S, GLES30.GL_CLAMP_TO_EDGE)
     GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_WRAP_T, GLES30.GL_CLAMP_TO_EDGE)
+  }
+
+  private fun bindLinearClamp3d(id: Int) {
+    GLES30.glBindTexture(GLES30.GL_TEXTURE_3D, id)
+    GLES30.glTexParameteri(GLES30.GL_TEXTURE_3D, GLES30.GL_TEXTURE_MIN_FILTER, GLES30.GL_LINEAR)
+    GLES30.glTexParameteri(GLES30.GL_TEXTURE_3D, GLES30.GL_TEXTURE_MAG_FILTER, GLES30.GL_LINEAR)
+    GLES30.glTexParameteri(GLES30.GL_TEXTURE_3D, GLES30.GL_TEXTURE_WRAP_S, GLES30.GL_CLAMP_TO_EDGE)
+    GLES30.glTexParameteri(GLES30.GL_TEXTURE_3D, GLES30.GL_TEXTURE_WRAP_T, GLES30.GL_CLAMP_TO_EDGE)
+    GLES30.glTexParameteri(GLES30.GL_TEXTURE_3D, GLES30.GL_TEXTURE_WRAP_R, GLES30.GL_CLAMP_TO_EDGE)
   }
 
   private fun readPixelsRgba(w: Int, h: Int): ByteArray {
@@ -249,9 +368,9 @@ void main() {
     }
   }
 
-  private fun buildProgram(): Int {
+  private fun buildProgram(fragmentSource: String): Int {
     val vs = compileShader(GLES30.GL_VERTEX_SHADER, VERT)
-    val fs = compileShader(GLES30.GL_FRAGMENT_SHADER, FRAG)
+    val fs = compileShader(GLES30.GL_FRAGMENT_SHADER, fragmentSource)
     val p = GLES30.glCreateProgram()
     GLES30.glAttachShader(p, vs)
     GLES30.glAttachShader(p, fs)
@@ -263,7 +382,7 @@ void main() {
     if (link[0] != GLES30.GL_TRUE) {
       val log = GLES30.glGetProgramInfoLog(p)
       GLES30.glDeleteProgram(p)
-      error("GL program (cube): $log")
+      error("GL program (frame): $log")
     }
     return p
   }
@@ -277,7 +396,7 @@ void main() {
     if (stat[0] != GLES30.GL_TRUE) {
       val log = GLES30.glGetShaderInfoLog(s)
       GLES30.glDeleteShader(s)
-      error("GL shader (cube): $log")
+      error("GL shader (frame): $log")
     }
     return s
   }

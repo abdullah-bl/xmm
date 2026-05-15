@@ -9,7 +9,6 @@ import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import {
   Easing,
   cancelAnimation,
-  runOnJS,
   useAnimatedReaction,
   useSharedValue,
   withRepeat,
@@ -25,15 +24,17 @@ import {
   useCameraPermission,
   usePhotoOutput,
 } from 'react-native-vision-camera';
+import { runOnJS, scheduleOnRN } from "react-native-worklets";
 import { useShallow } from 'zustand/react/shallow';
 
 import { CountdownOverlay } from '@/components/camera/countdown-overlay';
 import { FilmChip } from '@/components/camera/film-chip';
-import { FocalLengthStrip } from '@/components/camera/focal-length-strip';
 import { FocusReticle } from '@/components/camera/focus-reticle';
 import { GalleryThumbnail } from '@/components/camera/gallery-thumbnail';
 import { GridOverlay } from '@/components/camera/grid-overlay';
+import { LevelOverlay } from '@/components/camera/level-overlay';
 import { LockIndicator } from '@/components/camera/lock-indicator';
+import { QuickControls } from '@/components/camera/quick-controls';
 import { ShutterButton } from '@/components/camera/shutter-button';
 import { TopBar } from '@/components/camera/top-bar';
 import { ZoomIndicator } from '@/components/camera/zoom-indicator';
@@ -58,6 +59,28 @@ const QUALITY_TO_PRIORITY = {
 
 const LONG_PRESS_MIN_MS = 450;
 
+interface WhiteBalanceGainsLike {
+  redGain: number;
+  greenGain: number;
+  blueGain: number;
+}
+
+interface CameraControllerLike {
+  device: {
+    supportsWhiteBalanceLocking?: boolean;
+    maxWhiteBalanceGain?: number;
+  };
+  lockCurrentWhiteBalance: () => Promise<void>;
+  convertWhiteBalanceTemperatureAndTintValues: (values: {
+    temperature: number;
+    tint: number;
+  }) => WhiteBalanceGainsLike;
+  setWhiteBalanceLocked: (gains: WhiteBalanceGainsLike) => Promise<void>;
+}
+
+const clamp = (value: number, min: number, max: number) =>
+  Math.min(max, Math.max(min, value));
+
 export default function CameraScreen() {
   const insets = useSafeAreaInsets();
 
@@ -66,10 +89,20 @@ export default function CameraScreen() {
     focalLengthMm,
     nightMode,
     grid,
+    level,
     quality,
     photoHDR,
+    exposureBias,
+    whiteBalanceMode,
+    whiteBalanceTemperature,
+    whiteBalanceTint,
     lock3A,
     setFocalLength,
+    setExposureBias,
+    resetExposureBias,
+    setWhiteBalanceMode,
+    setWhiteBalanceManual,
+    resetWhiteBalance,
     setLock3A,
   } = useCameraStore(
     useShallow((s) => ({
@@ -77,10 +110,20 @@ export default function CameraScreen() {
       focalLengthMm: s.focalLengthMm,
       nightMode: s.nightMode,
       grid: s.grid,
+      level: s.level,
       quality: s.quality,
       photoHDR: s.photoHDR,
+      exposureBias: s.exposureBias,
+      whiteBalanceMode: s.whiteBalanceMode,
+      whiteBalanceTemperature: s.whiteBalanceTemperature,
+      whiteBalanceTint: s.whiteBalanceTint,
       lock3A: s.lock3A,
       setFocalLength: s.setFocalLength,
+      setExposureBias: s.setExposureBias,
+      resetExposureBias: s.resetExposureBias,
+      setWhiteBalanceMode: s.setWhiteBalanceMode,
+      setWhiteBalanceManual: s.setWhiteBalanceManual,
+      resetWhiteBalance: s.resetWhiteBalance,
       setLock3A: s.setLock3A,
     })),
   );
@@ -145,6 +188,15 @@ export default function CameraScreen() {
   const minZoom = device?.minZoom ?? 1;
   const maxZoom = device?.maxZoom ?? 1;
   const wideReferenceZoom = device?.zoomLensSwitchFactors?.[0] ?? 1;
+  const exposureSupported = !!device?.supportsExposureBias;
+  const exposureMin = device?.minExposureBias ?? -2;
+  const exposureMax = device?.maxExposureBias ?? 2;
+  const clampedExposureBias = exposureSupported
+    ? clamp(exposureBias, exposureMin, exposureMax)
+    : 0;
+  // Always treat WB as supported — the controller guards handle hardware failures gracefully.
+  // device?.supportsWhiteBalanceLocking is unreliable on back cameras for some VisionCamera versions.
+  const whiteBalanceSupported = true;
 
   // Precomputed `(focalMm, zoom)` pairs the worklet uses to snap continuous
   // pinch-zoom to the highlighted preset on every frame.
@@ -189,8 +241,10 @@ export default function CameraScreen() {
   // Gestures + animated state
   // ---------------------------------------------------------------------
   const cameraRef = useRef<CameraRef>(null);
+  const controllerRef = useRef<CameraControllerLike | null>(null);
 
   const zoomSV = useSharedValue(targetZoom);
+  const exposureSV = useSharedValue(clampedExposureBias);
   const savedZoomSV = useSharedValue(targetZoom);
   const pinchActiveSV = useSharedValue(0);
   const lastSnappedMmSV = useSharedValue<number>(focalLengthMm);
@@ -208,6 +262,18 @@ export default function CameraScreen() {
     if (pinchActiveSV.value > 0) return;
     zoomSV.value = withTiming(targetZoom, { duration: 220 });
   }, [targetZoom, zoomSV, pinchActiveSV]);
+
+  useEffect(() => {
+    exposureSV.value = withTiming(clampedExposureBias, { duration: 140 });
+    if (clampedExposureBias !== exposureBias) {
+      setExposureBias(clampedExposureBias);
+    }
+  }, [clampedExposureBias, exposureBias, exposureSV, setExposureBias]);
+
+  useEffect(() => {
+    if (exposureSupported) return;
+    if (exposureBias !== 0) resetExposureBias();
+  }, [exposureBias, exposureSupported, resetExposureBias]);
 
   // Pulse the reticle while AE/AF/AWB are locked; fade it out otherwise.
   useEffect(() => {
@@ -269,6 +335,69 @@ export default function CameraScreen() {
         .catch(() => { });
     },
     [],
+  );
+
+  const handleCameraConfigured = useCallback(() => {
+    const ref = cameraRef.current as
+      | (CameraRef & { controller?: CameraControllerLike })
+      | null;
+    controllerRef.current = ref?.controller ?? null;
+  }, []);
+
+  // Per VisionCamera docs (locking AE/AF/AWB): when the scene substantially
+  // changes, release any tap-to-lock so AE/AF/AWB resume tracking the scene.
+  // This is what makes "auto" white balance actually follow the scene.
+  const handleSubjectAreaChanged = useCallback(() => {
+    if (!lockRef.current) return;
+    setLock3A(false);
+    cameraRef.current?.resetFocus().catch(() => { });
+  }, [setLock3A]);
+
+  const resetWhiteBalanceToAuto = useCallback(() => {
+    resetWhiteBalance();
+    setLock3A(false);
+    cameraRef.current?.resetFocus().catch(() => { });
+  }, [resetWhiteBalance, setLock3A]);
+
+  const lockCurrentWhiteBalance = useCallback(() => {
+    const controller = controllerRef.current;
+    if (!controller?.device.supportsWhiteBalanceLocking) return;
+    controller
+      .lockCurrentWhiteBalance()
+      .then(() => setWhiteBalanceMode('locked'))
+      .catch(() => { });
+  }, [setWhiteBalanceMode]);
+
+  const setManualWhiteBalance = useCallback(
+    (temperature: number, tint: number) => {
+      const controller = controllerRef.current;
+      if (!controller?.device.supportsWhiteBalanceLocking) return;
+      const gains = controller.convertWhiteBalanceTemperatureAndTintValues({
+        temperature,
+        tint,
+      });
+      const maxGain = controller.device.maxWhiteBalanceGain ?? 0;
+      const clampedGains =
+        maxGain > 0
+          ? {
+            redGain: clamp(gains.redGain, 1, maxGain),
+            greenGain: clamp(gains.greenGain, 1, maxGain),
+            blueGain: clamp(gains.blueGain, 1, maxGain),
+          }
+          : gains;
+
+      setWhiteBalanceManual(temperature, tint);
+      controller.setWhiteBalanceLocked(clampedGains).catch(() => { });
+    },
+    [setWhiteBalanceManual],
+  );
+
+  const setClampedExposureBias = useCallback(
+    (bias: number) => {
+      if (!exposureSupported) return;
+      setExposureBias(clamp(bias, exposureMin, exposureMax));
+    },
+    [exposureMax, exposureMin, exposureSupported, setExposureBias],
   );
 
   const handleTapJS = useCallback(
@@ -355,7 +484,7 @@ export default function CameraScreen() {
         .onEnd(() => {
           'worklet';
           pinchActiveSV.value = withTiming(0, { duration: 220 });
-          runOnJS(handlePinchEndJS)(zoomSV.value);
+          scheduleOnRN(handlePinchEndJS, zoomSV.value);
         }),
     [
       handlePinchEndJS,
@@ -396,7 +525,7 @@ export default function CameraScreen() {
       }
       if (bestMm !== lastSnappedMmSV.value) {
         lastSnappedMmSV.value = bestMm;
-        runOnJS(setFocalFromWorklet)(bestMm);
+        scheduleOnRN(setFocalFromWorklet, bestMm);
       }
     },
     [focalZoomTable],
@@ -477,8 +606,6 @@ export default function CameraScreen() {
     <View className='flex-1 bg-black' style={{ paddingTop: insets.top + 8 }}>
       <Stack.Header hidden />
       <StatusBar hidden />
-
-
       <View className='flex-1 bg-black overflow-hidden rounded-3xl'>
         {device ? (
           <GestureDetector gesture={composedGesture}>
@@ -490,21 +617,25 @@ export default function CameraScreen() {
                 outputs={outputs}
                 constraints={constraints}
                 zoom={zoomSV}
+                exposure={exposureSupported ? exposureSV : undefined}
                 getInitialZoom={() => zoomSV.value}
+                onConfigured={handleCameraConfigured}
+                onSubjectAreaChanged={handleSubjectAreaChanged}
                 enableLowLightBoost={lowLightBoost}
                 enableNativeTapToFocusGesture={false}
                 enableNativeZoomGesture={false}
                 enableSmoothAutoFocus={smoothAutoFocus}
                 style={StyleSheet.absoluteFill}
               />
-              <View className='py-4'>
+              <View className='absolute top-2 left-0 right-0 z-10 flex-row items-center justify-center gap-4'>
                 <TopBar />
+
+                <FocusReticle
+                  point={focusPointSV}
+                  opacity={focusOpacitySV}
+                  scale={focusScaleSV}
+                />
               </View>
-              <FocusReticle
-                point={focusPointSV}
-                opacity={focusOpacitySV}
-                scale={focusScaleSV}
-              />
               <View className='absolute bottom-0 left-0 right-0'>
                 <ZoomIndicator
                   zoom={zoomSV}
@@ -526,18 +657,31 @@ export default function CameraScreen() {
           </View>
         )}
         <GridOverlay visible={grid} />
+        <LevelOverlay visible={level} />
         <CountdownOverlay remaining={state.countdownRemaining} />
         <LockIndicator visible={lock3A} />
       </View>
 
       {/* Bottom Section */}
-      <View className=' h-1/4 bg-black overflow-hidden rounded-3xl'>
+      <View className='bg-black overflow-hidden  rounded-3xl min-h-1/4'>
         <View style={styles.midSection}>
-
-          <FocalLengthStrip
-            presets={availableFocals}
-            selected={focalLengthMm}
-            onSelect={setFocalLength}
+          <QuickControls
+            focalPresets={availableFocals}
+            focalLengthMm={focalLengthMm}
+            onFocalLengthSelect={setFocalLength}
+            exposureBias={clampedExposureBias}
+            exposureMin={exposureMin}
+            exposureMax={exposureMax}
+            exposureSupported={exposureSupported}
+            onExposureChange={setClampedExposureBias}
+            onExposureReset={resetExposureBias}
+            whiteBalanceMode={whiteBalanceMode}
+            whiteBalanceTemperature={whiteBalanceTemperature}
+            whiteBalanceTint={whiteBalanceTint}
+            whiteBalanceSupported={whiteBalanceSupported}
+            onWhiteBalanceAuto={resetWhiteBalanceToAuto}
+            onWhiteBalanceLock={lockCurrentWhiteBalance}
+            onWhiteBalanceManual={setManualWhiteBalance}
           />
         </View>
 
@@ -545,14 +689,14 @@ export default function CameraScreen() {
           className='px-4 pb-2'
           style={{ paddingBottom: insets.bottom }}
         >
-          <View className='flex-row items-center justify-between'>
-            <View className='flex-1 items-start'>
+          <View className='flex-row items-center justify-between' style={{ minHeight: 74 }}>
+            <View className='flex-1 items-start' style={{ alignItems: 'flex-start' }}>
               <GalleryThumbnail />
             </View>
 
             <ShutterButton
               onPress={handleShutterPress}
-              busy={state.stage === 'capturing' || state.stage === 'processing' || state.stage === 'saving'}
+              busy={state.stage === 'countdown' || state.stage === 'capturing'}
               disabled={!photoOutput || !device}
             />
 
@@ -580,9 +724,10 @@ const styles = StyleSheet.create({
     zIndex: 10,
   },
   midSection: {
-    flex: 1,
-    paddingTop: 16,
+    paddingTop: 10,
     paddingBottom: 8,
-    justifyContent: 'flex-start',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
   },
 });

@@ -5,9 +5,8 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "scheme": "aura",
+    "scheme": "xmm",
     "userInterfaceStyle": "dark",
-    "jsEngine": "hermes",
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "bl.abdullah.xmm",
@@ -17,9 +16,18 @@
         "UIRequiresFullScreen": true,
         "NSCameraUsageDescription": "$(PRODUCT_NAME) needs access to your Camera to capture photos and videos.",
         "NSMicrophoneUsageDescription": "$(PRODUCT_NAME) needs access to your Microphone to record audio for video recordings.",
-        "NSPhotoLibraryUsageDescription": "$(PRODUCT_NAME) needs access to your photo library so you can pick existing photos to view or share.",
-        "NSPhotoLibraryAddUsageDescription": "$(PRODUCT_NAME) needs to save your captured photos to your photo library.",
-        "NSLocationWhenInUseUsageDescription": "$(PRODUCT_NAME) embeds your location in photos when Embed Location is enabled in Settings."
+        "NSPhotoLibraryUsageDescription": "$(PRODUCT_NAME) reads your captured photos so you can browse, share and delete them from inside the app.",
+        "NSPhotoLibraryAddUsageDescription": "$(PRODUCT_NAME) saves your captured photos to your photo library.",
+        "NSLocationWhenInUseUsageDescription": "$(PRODUCT_NAME) embeds your location in photos when Embed Location is enabled in Settings.",
+        "LSApplicationQueriesSchemes": [
+          "instagram",
+          "instagram-stories"
+        ]
+      },
+      "entitlements": {
+        "com.apple.security.application-groups": [
+          "group.bl.abdullah.xmm"
+        ]
       }
     },
     "android": {
@@ -27,14 +35,33 @@
         "backgroundColor": "#000000",
         "foregroundImage": "./assets/adaptive-icon.png"
       },
-      "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
       "versionCode": 1,
       "permissions": [
         "android.permission.RECORD_AUDIO",
         "android.permission.MODIFY_AUDIO_SETTINGS",
         "android.permission.ACCESS_FINE_LOCATION",
-        "android.permission.ACCESS_COARSE_LOCATION"
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.READ_MEDIA_VISUAL_USER_SELECTED",
+        "android.permission.READ_MEDIA_VIDEO",
+        "android.permission.READ_MEDIA_AUDIO",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.READ_MEDIA_VISUAL_USER_SELECTED",
+        "android.permission.READ_MEDIA_VIDEO",
+        "android.permission.READ_MEDIA_AUDIO"
       ]
     },
     "web": {
@@ -47,11 +74,7 @@
         {
           "image": "./assets/splash.png",
           "resizeMode": "cover",
-          "backgroundColor": "#000000",
-          "dark": {
-            "image": "./assets/splash.png",
-            "backgroundColor": "#000000"
-          }
+          "backgroundColor": "#000000"
         }
       ],
       "expo-video",
@@ -79,7 +102,8 @@
       [
         "expo-media-library",
         {
-          "savePhotosPermission": "$(PRODUCT_NAME) needs to save your captured photos to your photo library.",
+          "photosPermission": "$(PRODUCT_NAME) reads your captured photos so you can browse, share and delete them from inside the app.",
+          "savePhotosPermission": "$(PRODUCT_NAME) saves your captured photos to your photo library.",
           "isAccessMediaLocationEnabled": false
         }
       ],
@@ -99,7 +123,8 @@
             "com.instagram.android"
           ]
         }
-      ]
+      ],
+      "expo-build-properties"
     ],
     "experiments": {
       "typedRoutes": true,
@@ -108,16 +133,33 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "591b385f-9ebb-4328-8b89-b8fa1a95a6c0"
+        "build": {
+          "experimental": {
+            "ios": {
+              "appExtensions": [
+                {
+                  "targetName": "expo-sharing-extension",
+                  "bundleIdentifier": "bl.abdullah.xmm.expo-sharing-extension",
+                  "entitlements": {
+                    "com.apple.security.application-groups": [
+                      "group.bl.abdullah.xmm"
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "projectId": "a883788d-3036-42c8-bc5f-e6f37d7cd6fa"
       }
     },
     "runtimeVersion": {
       "policy": "appVersion"
     },
     "updates": {
-      "url": "https://u.expo.dev/591b385f-9ebb-4328-8b89-b8fa1a95a6c0",
       "checkAutomatically": "ON_LOAD",
-      "fallbackToCacheTimeout": 0
+      "fallbackToCacheTimeout": 0,
+      "url": "https://u.expo.dev/a883788d-3036-42c8-bc5f-e6f37d7cd6fa"
     }
   }
 }

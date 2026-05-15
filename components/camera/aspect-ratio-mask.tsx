@@ -1,17 +1,12 @@
 import { useMemo } from 'react';
 import { View, useWindowDimensions } from 'react-native';
 
+import { RATIO_VALUES } from '@/lib/aspect-ratio-values';
 import type { AspectRatio } from '@/stores/camera-store';
 
 interface AspectRatioMaskProps {
   aspectRatio: AspectRatio;
 }
-
-const RATIO_VALUES: Record<AspectRatio, number> = {
-  '4:3': 4 / 3,
-  '16:9': 16 / 9,
-  '1:1': 1,
-};
 
 const SENSOR_RATIO = RATIO_VALUES['4:3'];
 const BAR_COLOR = 'rgba(0,0,0,0.7)';

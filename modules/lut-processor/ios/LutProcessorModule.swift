@@ -1,5 +1,15 @@
 import ExpoModulesCore
 
+private struct ProcessCaptureOptions: Record {
+  @Field var aspectRatio: String = "4:3"
+  @Field var cropAspectRatio: Double? = nil
+  @Field var lutPath: String? = nil
+  @Field var framePath: String? = nil
+  @Field var intensity: Double = 1.0
+  @Field var quality: Double = 0.92
+  @Field var mirror: Bool = false
+}
+
 public class LutProcessorModule: Module {
   private lazy var renderer: Result<MetalLutRenderer, Error> = {
     Result { try MetalLutRenderer() }
@@ -8,9 +18,9 @@ public class LutProcessorModule: Module {
   public func definition() -> ModuleDefinition {
     Name("LutProcessor")
 
-    AsyncFunction("applyLut") { (imagePath: String, lutPath: String, intensity: Double, quality: Double?) -> String in
-      let amount = Float(min(max(intensity, 0.0), 1.0))
-      let q = Float(min(max(quality ?? 0.95, 0.0), 1.0))
+    AsyncFunction("processCapture") { (imagePath: String, options: ProcessCaptureOptions) -> String in
+      let amount = Float(min(max(options.intensity, 0.0), 1.0))
+      let q = Float(min(max(options.quality, 0.0), 1.0))
       let r: MetalLutRenderer
       switch self.renderer {
       case .success(let renderer):
@@ -18,12 +28,24 @@ public class LutProcessorModule: Module {
       case .failure(let err):
         throw err
       }
-      return try r.applyLutToFile(
+      return try r.processCapture(
         imagePath: imagePath,
-        lutPath: lutPath,
+        aspectRatio: options.aspectRatio,
+        cropAspectRatio: options.cropAspectRatio,
+        lutPath: options.lutPath,
+        framePath: options.framePath,
         intensity: amount,
-        quality: q
+        quality: q,
+        mirror: options.mirror
       )
+    }
+
+    AsyncFunction("transferCoreExif") { (sourcePath: String, targetPath: String) -> String in
+      try ExifMetadata.transferCoreExif(
+        sourcePath: sourcePath,
+        targetPath: targetPath
+      )
+      return targetPath
     }
   }
 }

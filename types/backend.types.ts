@@ -11,6 +11,7 @@ export const Collections = {
 	Mfas: "_mfas",
 	Otps: "_otps",
 	Superusers: "_superusers",
+	Feedbacks: "feedbacks",
 	Films: "films",
 	Metrics: "metrics",
 	Users: "users",
@@ -26,8 +27,8 @@ export type HTMLString = string
 
 type ExpandType<T> = unknown extends T
 	? T extends unknown
-		? { expand?: unknown }
-		: { expand: T }
+	? { expand?: unknown }
+	: { expand: T }
 	: { expand: T }
 
 // System fields
@@ -95,15 +96,27 @@ export type SuperusersRecord = {
 	verified?: boolean
 }
 
+export type FeedbacksRecord<Tapp = unknown, Tdevice = unknown> = {
+	app?: null | Tapp
+	content?: string
+	created: IsoAutoDateString
+	device?: null | Tdevice
+	id: string
+	type?: string
+	updated: IsoAutoDateString
+}
+
 export type FilmsRecord = {
 	active?: boolean
 	category?: string
 	created: IsoAutoDateString
 	description?: string
 	featured?: boolean
+	frame?: FileNameString
 	id: string
-	lut?: FileNameString
-	name?: string
+	lut: FileNameString
+	name: string
+	pro?: boolean
 	samples?: FileNameString[]
 	updated: IsoAutoDateString
 }
@@ -137,6 +150,7 @@ export type ExternalauthsResponse<Texpand = unknown> = Required<ExternalauthsRec
 export type MfasResponse<Texpand = unknown> = Required<MfasRecord> & BaseSystemFields<Texpand>
 export type OtpsResponse<Texpand = unknown> = Required<OtpsRecord> & BaseSystemFields<Texpand>
 export type SuperusersResponse<Texpand = unknown> = Required<SuperusersRecord> & AuthSystemFields<Texpand>
+export type FeedbacksResponse<Tapp = unknown, Tdevice = unknown, Texpand = unknown> = Required<FeedbacksRecord<Tapp, Tdevice>> & BaseSystemFields<Texpand>
 export type FilmsResponse<Texpand = unknown> = Required<FilmsRecord> & BaseSystemFields<Texpand>
 export type MetricsResponse<Tapp = unknown, Tdevice = unknown, Texpand = unknown> = Required<MetricsRecord<Tapp, Tdevice>> & BaseSystemFields<Texpand>
 export type UsersResponse<Texpand = unknown> = Required<UsersRecord> & AuthSystemFields<Texpand>
@@ -149,6 +163,7 @@ export type CollectionRecords = {
 	_mfas: MfasRecord
 	_otps: OtpsRecord
 	_superusers: SuperusersRecord
+	feedbacks: FeedbacksRecord
 	films: FilmsRecord
 	metrics: MetricsRecord
 	users: UsersRecord
@@ -160,6 +175,7 @@ export type CollectionResponses = {
 	_mfas: MfasResponse
 	_otps: OtpsResponse
 	_superusers: SuperusersResponse
+	feedbacks: FeedbacksResponse
 	films: FilmsResponse
 	metrics: MetricsResponse
 	users: UsersResponse
@@ -169,13 +185,13 @@ export type CollectionResponses = {
 
 type ProcessCreateAndUpdateFields<T> = Omit<{
 	// Omit AutoDate fields
-	[K in keyof T as Extract<T[K], IsoAutoDateString> extends never ? K : never]: 
-		// Convert FileNameString to File
-		T[K] extends infer U ? 
-			U extends (FileNameString | FileNameString[]) ? 
-				U extends any[] ? File[] : File 
-			: U
-		: never
+	[K in keyof T as Extract<T[K], IsoAutoDateString> extends never ? K : never]:
+	// Convert FileNameString to File
+	T[K] extends infer U ?
+	U extends (FileNameString | FileNameString[]) ?
+	U extends any[] ? File[] : File
+	: U
+	: never
 }, 'id'>
 
 // Create type for Auth collections
@@ -213,14 +229,14 @@ export type UpdateBase<T> = Partial<
 // Get the correct create type for any collection
 export type Create<T extends keyof CollectionResponses> =
 	CollectionResponses[T] extends AuthSystemFields
-		? CreateAuth<CollectionRecords[T]>
-		: CreateBase<CollectionRecords[T]>
+	? CreateAuth<CollectionRecords[T]>
+	: CreateBase<CollectionRecords[T]>
 
 // Get the correct update type for any collection
 export type Update<T extends keyof CollectionResponses> =
 	CollectionResponses[T] extends AuthSystemFields
-		? UpdateAuth<CollectionRecords[T]>
-		: UpdateBase<CollectionRecords[T]>
+	? UpdateAuth<CollectionRecords[T]>
+	: UpdateBase<CollectionRecords[T]>
 
 // Type for usage with type asserted PocketBase instance
 // https://github.com/pocketbase/js-sdk#specify-typescript-definitions

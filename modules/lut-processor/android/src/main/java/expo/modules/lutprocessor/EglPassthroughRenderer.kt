@@ -4,7 +4,6 @@ package expo.modules.lutprocessor
 
 import android.content.Context
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.opengl.EGL14
 import android.opengl.GLES30
 import android.opengl.GLUtils
@@ -19,9 +18,12 @@ import javax.microedition.khronos.egl.EGLDisplay
 import javax.microedition.khronos.egl.EGLSurface
 
 /**
- * Hald CLUT (PNG) via OpenGL ES 3.
+ * No-LUT path used when a capture should be centre-cropped and re-encoded
+ * without colour grading. Shares the same crop-uniform contract as the
+ * Hald / .cube renderers so the JS caller can always go through a single
+ * native entry point.
  */
-internal object EglHaldLutRenderer {
+internal object EglPassthroughRenderer {
   private const val VERT = """#version 300 es
 const vec2 kPos[3] = vec2[3](
   vec2(-1.0, -1.0), vec2(3.0, -1.0), vec2(-1.0, 3.0)
@@ -40,62 +42,21 @@ void main() {
 precision highp float;
 in vec2 vUv;
 out vec4 oFrag;
-uniform float uLevel;
-uniform float uIntensity;
 uniform vec2 uCropScale;
 uniform vec2 uCropOffset;
 uniform float uMirror;
 uniform sampler2D uSource;
-uniform sampler2D uHaldLut;
-vec2 haldIndexToUV(float idx, float W) {
-  float x = mod(idx, W);
-  float y = floor(idx / W);
-  return vec2((x + 0.5) / W, (y + 0.5) / W);
-}
-vec3 sampleHaldCell(sampler2D tex, float r, float g, float b, float cSize, float W) {
-  float idx = b * cSize * cSize + g * cSize + r;
-  return texture(tex, haldIndexToUV(idx, W)).rgb;
-}
-vec3 applyHaldTrilinear(sampler2D tex, vec3 color, float level) {
-  float cSize = level * level;
-  vec3 p = color * (cSize - 1.0);
-  vec3 c0 = floor(p);
-  vec3 t = p - c0;
-  c0 = clamp(c0, vec3(0.0), vec3(cSize - 1.0));
-  vec3 c1 = min(c0 + 1.0, vec3(cSize - 1.0));
-  float W = level * level * level;
-  vec3 s000 = sampleHaldCell(tex, c0.r, c0.g, c0.b, cSize, W);
-  vec3 s100 = sampleHaldCell(tex, c1.r, c0.g, c0.b, cSize, W);
-  vec3 s010 = sampleHaldCell(tex, c0.r, c1.g, c0.b, cSize, W);
-  vec3 s110 = sampleHaldCell(tex, c1.r, c1.g, c0.b, cSize, W);
-  vec3 s001 = sampleHaldCell(tex, c0.r, c0.g, c1.b, cSize, W);
-  vec3 s101 = sampleHaldCell(tex, c1.r, c0.g, c1.b, cSize, W);
-  vec3 s011 = sampleHaldCell(tex, c0.r, c1.g, c1.b, cSize, W);
-  vec3 s111 = sampleHaldCell(tex, c1.r, c1.g, c1.b, cSize, W);
-  vec3 x00 = mix(s000, s100, t.r);
-  vec3 x10 = mix(s010, s110, t.r);
-  vec3 x01 = mix(s001, s101, t.r);
-  vec3 x11 = mix(s011, s111, t.r);
-  vec3 y0 = mix(x00, x10, t.g);
-  vec3 y1 = mix(x01, x11, t.g);
-  return mix(y0, y1, t.b);
-}
 void main() {
   vec2 uv = vUv * uCropScale + uCropOffset;
   if (uMirror > 0.5) {
     uv.x = uCropOffset.x + uCropScale.x * (1.0 - vUv.x);
   }
-  vec3 src = texture(uSource, uv).rgb;
-  vec3 graded = applyHaldTrilinear(uHaldLut, src, uLevel);
-  vec3 outRgb = mix(src, graded, uIntensity);
-  oFrag = vec4(outRgb, 1.0);
+  oFrag = vec4(texture(uSource, uv).rgb, 1.0);
 }
 """
 
-  fun applyLut(
+  fun process(
     imagePath: String,
-    lutPath: String,
-    intensity: Float,
     aspectRatio: String,
     cropAspectRatio: Float? = null,
     mirror: Boolean,
@@ -103,12 +64,6 @@ void main() {
     jpegQuality: Int = 95,
   ): String {
     val sourceBmp = SourceImageLoader.decodeUprightBitmap(imagePath)
-    val lutBmp = BitmapFactory.decodeFile(lutPath, BitmapFactory.Options().apply { inScaled = false })
-      ?: throw IllegalStateException("Could not load LUT: $lutPath")
-    if (lutBmp.width != lutBmp.height) {
-      throw IllegalStateException("Invalid Hald CLUT: must be square, got ${lutBmp.width}x${lutBmp.height}")
-    }
-    val level = haldLevelFromLutSide(lutBmp.width)
     val crop = CropMath.centreCrop(
       sourceBmp.width,
       sourceBmp.height,
@@ -125,34 +80,25 @@ void main() {
     return try {
       egl.makeCurrent()
       val program = buildProgram()
-      val uLevel = GLES30.glGetUniformLocation(program, "uLevel")
-      val uInt = GLES30.glGetUniformLocation(program, "uIntensity")
       val uSource = GLES30.glGetUniformLocation(program, "uSource")
-      val uHaldLut = GLES30.glGetUniformLocation(program, "uHaldLut")
       val uCropScale = GLES30.glGetUniformLocation(program, "uCropScale")
       val uCropOffset = GLES30.glGetUniformLocation(program, "uCropOffset")
       val uMirror = GLES30.glGetUniformLocation(program, "uMirror")
       val fbo = IntArray(1)
       val colorTex = IntArray(1)
       val sourceTex = IntArray(1)
-      val haldTex = IntArray(1)
       val vao = IntArray(1)
       GLES30.glGenVertexArrays(1, vao, 0)
       GLES30.glBindVertexArray(vao[0])
       GLES30.glGenFramebuffers(1, fbo, 0)
       GLES30.glGenTextures(1, colorTex, 0)
       GLES30.glGenTextures(1, sourceTex, 0)
-      GLES30.glGenTextures(1, haldTex, 0)
       try {
         initRgbaTexture2D(colorTex[0], outW, outH)
         GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, sourceTex[0])
         GLUtils.texImage2D(GLES30.GL_TEXTURE_2D, 0, sourceBmp, 0)
-        checkGl("texImage2D source")
-        GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, haldTex[0])
-        GLUtils.texImage2D(GLES30.GL_TEXTURE_2D, 0, lutBmp, 0)
-        checkGl("texImage2D lut")
+        checkGl("texImage2D source (passthrough)")
         bindLinearClamp(sourceTex[0])
-        bindLinearClamp(haldTex[0])
         bindLinearClamp(colorTex[0])
         GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, fbo[0])
         GLES30.glFramebufferTexture2D(
@@ -167,19 +113,14 @@ void main() {
         GLES30.glUseProgram(program)
         GLES30.glClearColor(0f, 0f, 0f, 1f)
         GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT)
-        GLES30.glUniform1f(uLevel, level)
-        GLES30.glUniform1f(uInt, intensity)
         GLES30.glUniform2f(uCropScale, crop.scaleX, crop.scaleY)
         GLES30.glUniform2f(uCropOffset, crop.offsetX, crop.offsetY)
         GLES30.glUniform1f(uMirror, if (mirror) 1f else 0f)
         GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
         GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, sourceTex[0])
         GLES30.glUniform1i(uSource, 0)
-        GLES30.glActiveTexture(GLES30.GL_TEXTURE1)
-        GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, haldTex[0])
-        GLES30.glUniform1i(uHaldLut, 1)
         GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, 3)
-        checkGl("draw")
+        checkGl("draw passthrough")
         val bytes = readPixelsRgba(outW, outH)
         val outFile = File.createTempFile("lut_", ".jpg", ctx.cacheDir)
         FileOutputStream(outFile).use { fos ->
@@ -197,25 +138,12 @@ void main() {
         GLES30.glDeleteFramebuffers(1, fbo, 0)
         GLES30.glDeleteTextures(1, colorTex, 0)
         GLES30.glDeleteTextures(1, sourceTex, 0)
-        GLES30.glDeleteTextures(1, haldTex, 0)
         GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, 0)
       }
     } finally {
       sourceBmp.recycle()
-      lutBmp.recycle()
       egl.release()
     }
-  }
-
-  private fun haldLevelFromLutSide(side: Int): Float {
-    val s = side.toFloat()
-    val r = Math.cbrt(s.toDouble())
-    val l = Math.round(r).toInt()
-    if (l < 2) throw IllegalStateException("Invalid Hald CLUT: side = $side")
-    if (Math.abs(Math.pow(l.toDouble(), 3.0) - s) > 0.5) {
-      throw IllegalStateException("Invalid Hald CLUT: expected side = L^3 (e.g. 64, 512), got $side")
-    }
-    return l.toFloat()
   }
 
   private fun buildProgram(): Int {
@@ -232,7 +160,7 @@ void main() {
     if (link[0] != GLES30.GL_TRUE) {
       val log = GLES30.glGetProgramInfoLog(p)
       GLES30.glDeleteProgram(p)
-      error("GL program: $log")
+      error("GL program (passthrough): $log")
     }
     return p
   }
@@ -246,7 +174,7 @@ void main() {
     if (stat[0] != GLES30.GL_TRUE) {
       val log = GLES30.glGetShaderInfoLog(s)
       GLES30.glDeleteShader(s)
-      error("GL shader: $log")
+      error("GL shader (passthrough): $log")
     }
     return s
   }

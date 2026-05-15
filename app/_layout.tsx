@@ -14,6 +14,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { Uniwind } from "uniwind";
 
 import { useUpdatesCheck } from "@/hooks/useUpdatesCheck";
+import { migrateLegacySandboxGallery } from "@/lib/sandbox-migration";
 import "../global.css";
 
 // Lock the app to dark mode at module scope so the very first render is
@@ -62,6 +63,12 @@ export default function AppLayout() {
     if (!fontsReady) return;
     SplashScreen.hideAsync().catch(() => { });
   }, [fontsReady]);
+
+  useEffect(() => {
+    // Best-effort: import any photos written by the previous sandbox gallery
+    // into the system photo library. Runs at most once per install.
+    migrateLegacySandboxGallery().catch(() => {});
+  }, []);
 
   useUpdatesCheck();
 

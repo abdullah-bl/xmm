@@ -130,6 +130,7 @@ export default function FilmsScreen() {
 
   return (
     <>
+
       <Stack.Screen.Title large>Films</Stack.Screen.Title>
       <Stack.SearchBar
         onChangeText={(e) => setSearch(e.nativeEvent.text ?? '')}
@@ -141,6 +142,8 @@ export default function FilmsScreen() {
       <ScrollView
         contentInsetAdjustmentBehavior="automatic"
         style={{ flex: 1 }}
+        showsHorizontalScrollIndicator={false}
+        showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 32 }}
         refreshControl={
           <RefreshControl

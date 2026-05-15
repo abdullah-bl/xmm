@@ -121,7 +121,7 @@ export function FilmListItem({ film, active }: FilmListItemProps) {
                     flexShrink: 1,
                   }}
                 >
-                  {film.name ?? 'Untitled'}
+                  {film.name}
                 </Text>
                 {isFavorite ? (
                   <SfIcon

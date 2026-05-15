@@ -11,9 +11,9 @@ interface ShutterButtonProps {
   busy?: boolean;
 }
 
-const SIZE = 76;
-const INNER = 60;
-const OUTER_RADIUS = 22;
+const SIZE = 66;
+const INNER = 52;
+const OUTER_RADIUS = 20;
 const INNER_RADIUS = 16;
 
 /**
@@ -39,8 +39,8 @@ export function ShutterButton({ onPress, disabled, busy }: ShutterButtonProps) {
       disabled={disabled}
       onPress={onPress}
       onPressIn={() => {
-        scale.value = withTiming(0.94, { duration: 90 });
-        innerScale.value = withTiming(0.78, { duration: 90 });
+        scale.value = withTiming(0.95, { duration: 90 });
+        innerScale.value = withTiming(0.82, { duration: 90 });
       }}
       onPressOut={() => {
         scale.value = withTiming(1, { duration: 160 });
@@ -56,7 +56,7 @@ export function ShutterButton({ onPress, disabled, busy }: ShutterButtonProps) {
             borderRadius: OUTER_RADIUS,
             borderCurve: 'continuous',
             borderColor: '#fff',
-            borderWidth: 4,
+            borderWidth: 3,
             alignItems: 'center',
             justifyContent: 'center',
             opacity: disabled ? 0.4 : 1,
@@ -72,6 +72,9 @@ export function ShutterButton({ onPress, disabled, busy }: ShutterButtonProps) {
               borderRadius: INNER_RADIUS,
               borderCurve: 'continuous',
               backgroundColor: busy ? '#FFD60A' : '#fff',
+              boxShadow: busy
+                ? '0 0 18px rgba(255, 214, 10, 0.35)'
+                : '0 0 0 rgba(0, 0, 0, 0)',
             },
             innerStyle,
           ]}

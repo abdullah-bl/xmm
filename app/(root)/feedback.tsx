@@ -4,12 +4,14 @@ import { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   Pressable,
   ScrollView,
   Text,
   TextInput,
+  TouchableWithoutFeedback,
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -61,6 +63,7 @@ export default function FeedbackScreen() {
 
   const handleSubmit = async () => {
     if (!canSubmit) return;
+    Keyboard.dismiss();
     if (Platform.OS === 'ios') {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => { });
     }
@@ -84,10 +87,11 @@ export default function FeedbackScreen() {
   };
 
   return (
-    <KeyboardAvoidingView
-      style={{ flex: 1, backgroundColor: background }}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
+    <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+      <KeyboardAvoidingView
+        style={{ flex: 1, backgroundColor: background }}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
       <Stack.Screen.Title>Send Feedback</Stack.Screen.Title>
       <ScrollView
         contentInsetAdjustmentBehavior="automatic"
@@ -281,7 +285,8 @@ export default function FeedbackScreen() {
           </Text>
         </Pressable>
       </View>
-    </KeyboardAvoidingView>
+      </KeyboardAvoidingView>
+    </TouchableWithoutFeedback>
   );
 }
 

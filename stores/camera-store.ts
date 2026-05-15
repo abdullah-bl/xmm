@@ -1,14 +1,19 @@
 import { create } from 'zustand';
+import { persist, createJSONStorage } from 'zustand/middleware';
+
+import { storage } from '@/lib/storage';
 
 export type CameraPosition = 'back' | 'front';
 
-export type AspectRatio = '4:3' | '16:9' | '1:1';
+export type AspectRatio = '4:3' | '16:9' | '1:1' | '5:4' | '7:5' | '3:5' | '3:2';
 
 export type CaptureQuality = 'speed' | 'balanced' | 'quality';
 
 export type FlashMode = 'off' | 'on' | 'auto';
 
 export type TimerSeconds = 0 | 3 | 10;
+
+export type WhiteBalanceMode = 'auto' | 'locked' | 'manual';
 
 export const FOCAL_LENGTHS_BACK = [13, 24, 28, 35, 50, 85, 135] as const;
 
@@ -18,7 +23,7 @@ export type FocalLengthMm =
   | (typeof FOCAL_LENGTHS_BACK)[number]
   | (typeof FOCAL_LENGTHS_FRONT)[number];
 
-const ASPECT_CYCLE: AspectRatio[] = ['4:3', '16:9', '1:1'];
+const ASPECT_CYCLE: AspectRatio[] = ['4:3', '16:9', '1:1', '5:4', '7:5', '3:5', '3:2'];
 const FLASH_CYCLE: FlashMode[] = ['off', 'auto', 'on'];
 const TIMER_CYCLE: TimerSeconds[] = [0, 3, 10];
 
@@ -29,11 +34,18 @@ interface CameraState {
   quality: CaptureQuality;
   flashMode: FlashMode;
   grid: boolean;
+  level: boolean;
   nightMode: boolean;
   timer: TimerSeconds;
   shutterSound: boolean;
   geotag: boolean;
   photoHDR: boolean;
+  /** When true, front-camera captures are mirrored horizontally to match the preview. Persisted. */
+  mirrorFrontCamera: boolean;
+  exposureBias: number;
+  whiteBalanceMode: WhiteBalanceMode;
+  whiteBalanceTemperature: number;
+  whiteBalanceTint: number;
   /**
    * Whether AE/AF/AWB are currently locked at a manually-focused point. Set
    * by the long-press gesture on the camera preview, cleared on tap or
@@ -50,68 +62,117 @@ interface CameraState {
   setFlashMode: (mode: FlashMode) => void;
   cycleFlash: () => void;
   toggleGrid: () => void;
+  toggleLevel: () => void;
   toggleNightMode: () => void;
   cycleTimer: () => void;
   setTimer: (timer: TimerSeconds) => void;
   setShutterSound: (enabled: boolean) => void;
   setGeotag: (enabled: boolean) => void;
   setPhotoHDR: (enabled: boolean) => void;
+  setMirrorFrontCamera: (enabled: boolean) => void;
+  setExposureBias: (bias: number) => void;
+  resetExposureBias: () => void;
+  setWhiteBalanceMode: (mode: WhiteBalanceMode) => void;
+  setWhiteBalanceTemperature: (temperature: number) => void;
+  setWhiteBalanceTint: (tint: number) => void;
+  setWhiteBalanceManual: (temperature: number, tint: number) => void;
+  resetWhiteBalance: () => void;
   setLock3A: (locked: boolean) => void;
 }
 
-export const useCameraStore = create<CameraState>((set) => ({
-  position: 'back',
-  focalLengthMm: 24,
-  aspectRatio: '4:3',
-  quality: 'balanced',
-  flashMode: 'off',
-  grid: false,
-  nightMode: false,
-  timer: 0,
-  shutterSound: true,
-  geotag: false,
-  photoHDR: false,
-  lock3A: false,
+export const useCameraStore = create<CameraState>()(
+  persist(
+    (set) => ({
+      position: 'back',
+      focalLengthMm: 24,
+      aspectRatio: '4:3', // default aspect ratio
+      quality: 'balanced',
+      flashMode: 'off',
+      grid: false,
+      level: false,
+      nightMode: false,
+      timer: 0,
+      shutterSound: false,
+      geotag: false,
+      photoHDR: false,
+      mirrorFrontCamera: true,
+      exposureBias: 0,
+      whiteBalanceMode: 'auto',
+      whiteBalanceTemperature: 5500,
+      whiteBalanceTint: 0,
+      lock3A: false,
 
-  setPosition: (position) =>
-    set((s) => ({
-      position,
-      focalLengthMm: position === 'front' ? 24 : s.focalLengthMm,
-      lock3A: false,
-    })),
-  togglePosition: () =>
-    set((s) => ({
-      position: s.position === 'back' ? 'front' : 'back',
-      focalLengthMm: s.position === 'back' ? 24 : s.focalLengthMm,
-      lock3A: false,
-    })),
-  setFocalLength: (mm) => set({ focalLengthMm: mm }),
-  setAspectRatio: (aspectRatio) => set({ aspectRatio }),
-  cycleAspect: () =>
-    set((s) => ({
-      aspectRatio:
-        ASPECT_CYCLE[
-          (ASPECT_CYCLE.indexOf(s.aspectRatio) + 1) % ASPECT_CYCLE.length
-        ],
-    })),
-  setQuality: (quality) => set({ quality }),
-  setFlashMode: (flashMode) => set({ flashMode }),
-  cycleFlash: () =>
-    set((s) => ({
-      flashMode:
-        FLASH_CYCLE[
-          (FLASH_CYCLE.indexOf(s.flashMode) + 1) % FLASH_CYCLE.length
-        ],
-    })),
-  toggleGrid: () => set((s) => ({ grid: !s.grid })),
-  toggleNightMode: () => set((s) => ({ nightMode: !s.nightMode })),
-  cycleTimer: () =>
-    set((s) => ({
-      timer: TIMER_CYCLE[(TIMER_CYCLE.indexOf(s.timer) + 1) % TIMER_CYCLE.length],
-    })),
-  setTimer: (timer) => set({ timer }),
-  setShutterSound: (shutterSound) => set({ shutterSound }),
-  setGeotag: (geotag) => set({ geotag }),
-  setPhotoHDR: (photoHDR) => set({ photoHDR }),
-  setLock3A: (lock3A) => set({ lock3A }),
-}));
+      setPosition: (position) =>
+        set((s) => ({
+          position,
+          focalLengthMm: position === 'front' ? 24 : s.focalLengthMm,
+          lock3A: false,
+        })),
+      togglePosition: () =>
+        set((s) => ({
+          position: s.position === 'back' ? 'front' : 'back',
+          focalLengthMm: s.position === 'back' ? 24 : s.focalLengthMm,
+          lock3A: false,
+        })),
+      setFocalLength: (mm) => set({ focalLengthMm: mm }),
+      setAspectRatio: (aspectRatio) => set({ aspectRatio }),
+      cycleAspect: () =>
+        set((s) => ({
+          aspectRatio:
+            ASPECT_CYCLE[
+              (ASPECT_CYCLE.indexOf(s.aspectRatio) + 1) % ASPECT_CYCLE.length
+            ],
+        })),
+      setQuality: (quality) => set({ quality }),
+      setFlashMode: (flashMode) => set({ flashMode }),
+      cycleFlash: () =>
+        set((s) => ({
+          flashMode:
+            FLASH_CYCLE[
+              (FLASH_CYCLE.indexOf(s.flashMode) + 1) % FLASH_CYCLE.length
+            ],
+        })),
+      toggleGrid: () => set((s) => ({ grid: !s.grid })),
+      toggleLevel: () => set((s) => ({ level: !s.level })),
+      toggleNightMode: () => set((s) => ({ nightMode: !s.nightMode })),
+      cycleTimer: () =>
+        set((s) => ({
+          timer: TIMER_CYCLE[(TIMER_CYCLE.indexOf(s.timer) + 1) % TIMER_CYCLE.length],
+        })),
+      setTimer: (timer) => set({ timer }),
+      setShutterSound: (shutterSound) => set({ shutterSound }),
+      setGeotag: (geotag) => set({ geotag }),
+      setPhotoHDR: (photoHDR) => set({ photoHDR }),
+      setMirrorFrontCamera: (mirrorFrontCamera) => set({ mirrorFrontCamera }),
+      setExposureBias: (exposureBias) => set({ exposureBias }),
+      resetExposureBias: () => set({ exposureBias: 0 }),
+      setWhiteBalanceMode: (whiteBalanceMode) => set({ whiteBalanceMode }),
+      setWhiteBalanceTemperature: (whiteBalanceTemperature) =>
+        set({ whiteBalanceTemperature, whiteBalanceMode: 'manual' }),
+      setWhiteBalanceTint: (whiteBalanceTint) =>
+        set({ whiteBalanceTint, whiteBalanceMode: 'manual' }),
+      setWhiteBalanceManual: (whiteBalanceTemperature, whiteBalanceTint) =>
+        set({
+          whiteBalanceMode: 'manual',
+          whiteBalanceTemperature,
+          whiteBalanceTint,
+        }),
+      resetWhiteBalance: () =>
+        set({
+          whiteBalanceMode: 'auto',
+          whiteBalanceTemperature: 5500,
+          whiteBalanceTint: 0,
+        }),
+      setLock3A: (lock3A) => set({ lock3A }),
+    }),
+    {
+      name: 'camera-store:v1',
+      storage: createJSONStorage(() => ({
+        getItem: (name) => storage.getString(name),
+        setItem: (name, value) => storage.setString(name, value),
+        removeItem: (name) => storage.remove(name),
+      })),
+      partialize: (state) => ({ mirrorFrontCamera: state.mirrorFrontCamera }),
+    },
+  ),
+);

@@ -6,13 +6,19 @@ import type {
   CameraPhotoOutput,
   PhotoFile,
 } from 'react-native-vision-camera';
+import { useSWRConfig } from 'swr';
 
 import LutProcessor from '@/modules/lut-processor';
+import { RATIO_VALUES } from '@/lib/aspect-ratio-values';
+import { ensureFrameCached } from '@/hooks/use-cached-frame';
 import { ensureLutCached } from '@/hooks/use-cached-lut';
-import { saveToSystemLibrary } from '@/lib/album';
-import { addLocalPhoto } from '@/lib/local-gallery';
-import { cropPhotoToAspectRatio } from '@/lib/skia-crop';
-import { type CaptureQuality, useCameraStore } from '@/stores/camera-store';
+import { invalidateGalleryCache } from '@/hooks/use-gallery';
+import { saveCapture } from '@/lib/album';
+import {
+  type AspectRatio,
+  type CaptureQuality,
+  useCameraStore,
+} from '@/stores/camera-store';
 import { useFilmStore } from '@/stores/film-store';
 import type { FilmsResponse } from '@/types/backend.types';
 
@@ -22,12 +28,7 @@ const QUALITY_TO_FRACTION: Record<CaptureQuality, number> = {
   quality: 1,
 };
 
-export type CaptureStage =
-  | 'idle'
-  | 'countdown'
-  | 'capturing'
-  | 'processing'
-  | 'saving';
+export type CaptureStage = 'idle' | 'countdown' | 'capturing';
 
 export interface CaptureState {
   stage: CaptureStage;
@@ -37,6 +38,19 @@ export interface CaptureState {
 interface CaptureDeps {
   photoOutput: CameraPhotoOutput | null | undefined;
   resolveActiveFilm: () => FilmsResponse | null;
+}
+
+interface ProcessingJob {
+  rawPath: string;
+  aspectRatio: AspectRatio;
+  framePath: string | null;
+  framed: boolean;
+  lutPath: string | null;
+  intensity: number | undefined;
+  quality: number;
+  mirror: boolean;
+  filmId: string | null | undefined;
+  filmName: string | null | undefined;
 }
 
 function safeDelete(uri: string | null | undefined) {
@@ -59,6 +73,9 @@ export function usePhotoCapture({
   });
   const isCapturingRef = useRef(false);
   const cancelTimerRef = useRef<{ cancelled: boolean } | null>(null);
+  const queueRef = useRef<ProcessingJob[]>([]);
+  const drainRunningRef = useRef(false);
+  const { mutate } = useSWRConfig();
 
   const cancelCountdown = useCallback(() => {
     if (cancelTimerRef.current) {
@@ -68,6 +85,73 @@ export function usePhotoCapture({
     setState({ stage: 'idle', countdownRemaining: 0 });
     isCapturingRef.current = false;
   }, []);
+
+  const runOneJob = useCallback(
+    async (job: ProcessingJob) => {
+      let processedUri: string | null = null;
+      const visionPath =
+        job.rawPath && !job.rawPath.startsWith('file://')
+          ? `file://${job.rawPath}`
+          : job.rawPath;
+      try {
+        const finalUri = await LutProcessor.processCapture(job.rawPath, {
+          framePath: job.framePath,
+          aspectRatio: job.framePath ? undefined : job.aspectRatio,
+          cropAspectRatio: job.framePath
+            ? undefined
+            : RATIO_VALUES[job.aspectRatio],
+          lutPath: job.lutPath ?? null,
+          intensity: job.lutPath ? job.intensity : undefined,
+          quality: job.quality,
+          mirror: job.mirror,
+        });
+        processedUri = finalUri.startsWith('file://') ? finalUri : `file://${finalUri}`;
+
+        await LutProcessor.transferCoreExif(job.rawPath, processedUri).catch(
+          () => {},
+        );
+
+        try {
+          await saveCapture(processedUri, {
+            filmId: job.filmId,
+            filmName: job.filmName,
+            aspectRatio: job.framed ? 'framed' : job.aspectRatio,
+          });
+          await invalidateGalleryCache(mutate);
+        } catch (error) {
+          Alert.alert(
+            'Could not save photo',
+            error instanceof Error ? error.message : 'Unknown error',
+          );
+        }
+      } catch (error) {
+        Alert.alert(
+          'Capture failed',
+          error instanceof Error ? error.message : 'Unknown error',
+        );
+      } finally {
+        safeDelete(visionPath);
+        safeDelete(processedUri);
+      }
+    },
+    [mutate],
+  );
+
+  const drainQueue = useCallback(async () => {
+    if (drainRunningRef.current) return;
+    drainRunningRef.current = true;
+    try {
+      while (queueRef.current.length > 0) {
+        const job = queueRef.current.shift()!;
+        await runOneJob(job);
+      }
+    } finally {
+      drainRunningRef.current = false;
+      if (queueRef.current.length > 0) {
+        void drainQueue();
+      }
+    }
+  }, [runOneJob]);
 
   const capture = useCallback(async () => {
     if (isCapturingRef.current) return;
@@ -105,8 +189,7 @@ export function usePhotoCapture({
     setState({ stage: 'capturing', countdownRemaining: 0 });
 
     let captured: PhotoFile | null = null;
-    let croppedUri: string | null = null;
-    let lutUri: string | null = null;
+    let handedOff = false;
 
     try {
       captured = await photoOutput.capturePhotoToFile(
@@ -121,71 +204,44 @@ export function usePhotoCapture({
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy).catch(() => {});
       }
 
-      setState({ stage: 'processing', countdownRemaining: 0 });
-
-      const cropped = await cropPhotoToAspectRatio(
-        captured.filePath,
-        camera.aspectRatio,
-        camera.quality,
-      );
-      croppedUri = cropped.uri !== captured.filePath ? cropped.uri : null;
-
-      let finalUri = cropped.uri;
       const activeFilm = resolveActiveFilm();
-      if (activeFilm) {
-        const lutPath = await ensureLutCached(activeFilm);
-        if (lutPath) {
-          const result = await LutProcessor.applyLut(
-            finalUri,
-            lutPath,
-            film.intensity,
-            QUALITY_TO_FRACTION[camera.quality],
-          );
-          lutUri = result.startsWith('file://') ? result : `file://${result}`;
-          finalUri = lutUri;
-        }
-      }
+      const lutPath = activeFilm ? await ensureLutCached(activeFilm) : null;
+      const framePath =
+        activeFilm?.frame ? await ensureFrameCached(activeFilm) : null;
+      const mirror =
+        camera.position === 'front' && camera.mirrorFrontCamera;
 
-      setState({ stage: 'saving', countdownRemaining: 0 });
-      let localPhotoUri: string;
-      try {
-        const saved = await addLocalPhoto(finalUri, {
-          filmId: activeFilm?.id,
-          filmName: activeFilm?.name,
-          aspectRatio: camera.aspectRatio,
-        });
-        localPhotoUri = saved.uri;
-      } catch (error) {
-        Alert.alert(
-          'Could not save photo',
-          error instanceof Error ? error.message : 'Unknown error',
-        );
-        return null;
-      }
-      // Best-effort mirror to the system photo library so the photo is also
-      // visible in iOS Photos / Android Gallery. We mirror from the sandbox
-      // copy (which is stable across the upcoming `finally` cleanup) and
-      // never block the capture on it.
-      saveToSystemLibrary(localPhotoUri).catch(() => {});
-      return localPhotoUri;
+      queueRef.current.push({
+        rawPath: captured.filePath,
+        aspectRatio: camera.aspectRatio,
+        framePath,
+        framed: framePath != null,
+        lutPath,
+        intensity: lutPath ? film.intensity : undefined,
+        quality: QUALITY_TO_FRACTION[camera.quality],
+        mirror,
+        filmId: activeFilm?.id,
+        filmName: activeFilm?.name,
+      });
+      handedOff = true;
+      void drainQueue();
     } catch (error) {
       Alert.alert(
         'Capture failed',
         error instanceof Error ? error.message : 'Unknown error',
       );
-      return null;
     } finally {
-      const visionPath =
-        captured?.filePath && !captured.filePath.startsWith('file://')
-          ? `file://${captured.filePath}`
-          : captured?.filePath;
-      safeDelete(visionPath);
-      safeDelete(croppedUri);
-      safeDelete(lutUri);
+      if (!handedOff && captured) {
+        const p =
+          captured.filePath.startsWith('file://')
+            ? captured.filePath
+            : `file://${captured.filePath}`;
+        safeDelete(p);
+      }
       setState({ stage: 'idle', countdownRemaining: 0 });
       isCapturingRef.current = false;
     }
-  }, [photoOutput, resolveActiveFilm]);
+  }, [drainQueue, photoOutput, resolveActiveFilm]);
 
   return { state, capture, cancelCountdown };
 }

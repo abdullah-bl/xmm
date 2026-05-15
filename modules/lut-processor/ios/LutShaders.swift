@@ -13,10 +13,24 @@ struct VertOut {
   float2 uv;
 };
 
+/// Crop transform shared by every fragment in this file:
+///   sampledUv = in.uv * cropTransform.xy + cropTransform.zw
+/// where xy = cropSize / srcSize, zw = cropOrigin / srcSize. This lets a single
+/// decode + single encode produce a centre-cropped output regardless of LUT
+/// state (no LUT, Hald LUT, or .cube LUT).
 struct LutUniforms {
   float level;
   float intensity;
-  float2 padding;
+  float2 _padA;
+  float2 cropScale;
+  float2 cropOffset;
+};
+
+struct CubeUniforms {
+  float4 domainMin;
+  float4 domainMax;
+  float4 param;       // x: intensity, y: lutSize, z/w: unused
+  float4 cropTransform; // xy: cropScale, zw: cropOffset
 };
 
 /// Fullscreen triangle (no vertex buffer).
@@ -78,15 +92,10 @@ static float3 applyHaldTrilinear(
   return mix(y0, y1, t.b);
 }
 
-struct CubeUniforms {
-  float4 domainMin;
-  float4 domainMax;
-  float4 param;
-};
-
 fragment float4 lutFragmentCube(
   VertOut in [[stage_in]],
   constant CubeUniforms& u [[buffer(0)]],
+  constant float4& mirrorPacked [[buffer(1)]],
   texture2d<float, access::sample> source [[texture(0)]],
   texture3d<float, access::sample> cubeLut [[texture(1)]]
 ) {
@@ -95,7 +104,10 @@ fragment float4 lutFragmentCube(
     filter::linear,
     mip_filter::none
   );
-  const float2 uv = in.uv;
+  float2 uv = in.uv * u.cropTransform.xy + u.cropTransform.zw;
+  if (mirrorPacked.x > 0.5f) {
+    uv.x = u.cropTransform.z + u.cropTransform.x * (1.0f - in.uv.x);
+  }
   const float3 src = source.sample(smp, uv).rgb;
   float3 dmin = u.domainMin.xyz;
   float3 dmax = u.domainMax.xyz;
@@ -112,6 +124,7 @@ fragment float4 lutFragmentCube(
 fragment float4 lutFragment(
   VertOut in [[stage_in]],
   constant LutUniforms& u [[buffer(0)]],
+  constant float4& mirrorPacked [[buffer(1)]],
   texture2d<float, access::sample> source [[texture(0)]],
   texture2d<float, access::sample> haldLut [[texture(1)]]
 ) {
@@ -120,10 +133,56 @@ fragment float4 lutFragment(
     filter::linear,
     mip_filter::none
   );
-  const float2 uv = in.uv;
+  float2 uv = in.uv * u.cropScale + u.cropOffset;
+  if (mirrorPacked.x > 0.5f) {
+    uv.x = u.cropOffset.x + u.cropScale.x * (1.0f - in.uv.x);
+  }
   const float3 src = source.sample(smp, uv).rgb;
   const float3 graded = applyHaldTrilinear(haldLut, smp, src, u.level);
   const float3 outRgb = mix(src, graded, u.intensity);
+  return float4(outRgb, 1.0f);
+}
+
+fragment float4 passthroughFragment(
+  VertOut in [[stage_in]],
+  constant float4& cropTransform [[buffer(0)]],
+  constant float4& mirrorPacked [[buffer(1)]],
+  texture2d<float, access::sample> source [[texture(0)]]
+) {
+  constexpr sampler smp(
+    address::clamp_to_edge,
+    filter::linear,
+    mip_filter::none
+  );
+  float2 uv = in.uv * cropTransform.xy + cropTransform.zw;
+  if (mirrorPacked.x > 0.5f) {
+    uv.x = cropTransform.z + cropTransform.x * (1.0f - in.uv.x);
+  }
+  return float4(source.sample(smp, uv).rgb, 1.0f);
+}
+
+/// Composites a cropped photo texture into the frame cutout and alpha-blends
+/// the frame PNG on top. cutoutRect = (originX, originY, width, height) in
+/// normalised frame UV space.
+fragment float4 compositeFragment(
+  VertOut in [[stage_in]],
+  constant float4& cutoutRect [[buffer(0)]],
+  texture2d<float, access::sample> photo [[texture(0)]],
+  texture2d<float, access::sample> frame [[texture(1)]]
+) {
+  constexpr sampler smp(
+    address::clamp_to_edge,
+    filter::linear,
+    mip_filter::none
+  );
+  float4 frameCol = frame.sample(smp, in.uv);
+  float2 cutoutMin = cutoutRect.xy;
+  float2 cutoutSize = cutoutRect.zw;
+  float2 cutoutMax = cutoutMin + cutoutSize;
+  bool inCutout = all(in.uv >= cutoutMin) && all(in.uv <= cutoutMax);
+  float2 photoUV = (in.uv - cutoutMin) / max(cutoutSize, float2(1e-6));
+  float3 photoRgb = inCutout ? photo.sample(smp, photoUV).rgb : float3(0.0);
+  float3 outRgb = mix(photoRgb, frameCol.rgb, frameCol.a);
   return float4(outRgb, 1.0f);
 }
 """#
