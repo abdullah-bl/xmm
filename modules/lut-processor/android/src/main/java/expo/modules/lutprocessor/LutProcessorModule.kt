@@ -4,6 +4,7 @@ import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import expo.modules.kotlin.records.Field
 import expo.modules.kotlin.records.Record
+import java.util.concurrent.atomic.AtomicBoolean
 
 class ProcessCaptureOptions : Record {
   @Field var aspectRatio: String = "4:3"
@@ -15,9 +16,21 @@ class ProcessCaptureOptions : Record {
   @Field var mirror: Boolean = false
 }
 
+class GradeVideoOptions : Record {
+  @Field var aspectRatio: String = "4:3"
+  @Field var cropAspectRatio: Double? = null
+  @Field var lutPath: String? = null
+  @Field var framePath: String? = null
+  @Field var intensity: Double = 1.0
+  @Field var mirror: Boolean = false
+}
+
 class LutProcessorModule : Module() {
+  private val gradeVideoCancelled = AtomicBoolean(false)
+
   override fun definition() = ModuleDefinition {
     Name("LutProcessor")
+    Events("gradeVideoProgress")
 
     AsyncFunction("processCapture") { imagePath: String, options: ProcessCaptureOptions ->
       val ctx = appContext.reactContext
@@ -80,6 +93,22 @@ class LutProcessorModule : Module() {
         targetPath = normalizeFilePath(targetPath),
       )
       targetPath
+    }
+
+    AsyncFunction("cancelGradeVideo") {
+      gradeVideoCancelled.set(true)
+    }
+
+    AsyncFunction("gradeVideo") { inputPath: String, outputPath: String, options: GradeVideoOptions ->
+      val ctx = appContext.reactContext
+        ?: throw IllegalStateException("React context is not available")
+      gradeVideoCancelled.set(false)
+      VideoLutExporter.process(
+        normalizeFilePath(inputPath),
+        normalizeFilePath(outputPath),
+        options,
+        ctx,
+      )
     }
   }
 }

@@ -36,14 +36,18 @@ internal object FrameAnalysis {
       throw IllegalArgumentException("Invalid frame size")
     }
 
+    val pixels = IntArray(width * height)
+    bmp.getPixels(pixels, 0, width, 0, 0, width, height)
+
     var minX = width
     var minY = height
     var maxX = -1
     var maxY = -1
 
     for (y in 0 until height) {
+      val row = y * width
       for (x in 0 until width) {
-        val alpha = (bmp.getPixel(x, y) ushr 24) and 0xff
+        val alpha = (pixels[row + x] ushr 24) and 0xff
         if (alpha < ALPHA_THRESHOLD) {
           if (x < minX) minX = x
           if (y < minY) minY = y

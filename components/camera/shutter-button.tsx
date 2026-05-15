@@ -6,7 +6,11 @@ import Animated, {
 } from 'react-native-reanimated';
 
 interface ShutterButtonProps {
-  onPress: () => void;
+  /** When `video`, hold-to-record uses press in/out instead of `onPress`. */
+  captureMode?: 'photo' | 'video';
+  onPress?: () => void;
+  onVideoPressIn?: () => void;
+  onVideoPressOut?: () => void;
   disabled?: boolean;
   busy?: boolean;
 }
@@ -21,7 +25,14 @@ const INNER_RADIUS = 16;
  * traditional concentric circles. Inner pad goes yellow + dim while a
  * capture is in flight.
  */
-export function ShutterButton({ onPress, disabled, busy }: ShutterButtonProps) {
+export function ShutterButton({
+  captureMode = 'photo',
+  onPress,
+  onVideoPressIn,
+  onVideoPressOut,
+  disabled,
+  busy,
+}: ShutterButtonProps) {
   const scale = useSharedValue(1);
   const innerScale = useSharedValue(1);
 
@@ -35,16 +46,20 @@ export function ShutterButton({ onPress, disabled, busy }: ShutterButtonProps) {
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel="Capture photo"
+      accessibilityLabel={
+        captureMode === 'video' ? 'Hold to record video' : 'Capture photo'
+      }
       disabled={disabled}
-      onPress={onPress}
+      onPress={captureMode === 'video' ? undefined : onPress}
       onPressIn={() => {
         scale.value = withTiming(0.95, { duration: 90 });
         innerScale.value = withTiming(0.82, { duration: 90 });
+        if (captureMode === 'video') onVideoPressIn?.();
       }}
       onPressOut={() => {
         scale.value = withTiming(1, { duration: 160 });
         innerScale.value = withTiming(1, { duration: 160 });
+        if (captureMode === 'video') onVideoPressOut?.();
       }}
       hitSlop={12}
     >

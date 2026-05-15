@@ -21,7 +21,7 @@ async function fetchLatestPhoto(): Promise<Asset | null> {
   const granted = await ensureMediaPermission();
   if (!granted) return null;
   const [latest] = await new Query()
-    .eq(AssetField.MEDIA_TYPE, MediaType.IMAGE)
+    .within(AssetField.MEDIA_TYPE, [MediaType.IMAGE, MediaType.VIDEO])
     .orderBy({ key: AssetField.CREATION_TIME, ascending: false })
     .limit(1)
     .exe();

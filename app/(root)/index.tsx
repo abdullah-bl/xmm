@@ -23,6 +23,7 @@ import {
   useCameraDevice,
   useCameraPermission,
   usePhotoOutput,
+  useVideoOutput,
 } from 'react-native-vision-camera';
 import { runOnJS, scheduleOnRN } from "react-native-worklets";
 import { useShallow } from 'zustand/react/shallow';
@@ -44,6 +45,7 @@ import {
 } from '@/hooks/use-available-focal-lengths';
 import { useFilms } from '@/hooks/use-films';
 import { usePhotoCapture } from '@/hooks/use-photo-capture';
+import { useVideoCapture } from '@/hooks/use-video-capture';
 import {
   focalLengthToZoom,
   zoomToFocalLength,
@@ -98,6 +100,7 @@ export default function CameraScreen() {
     whiteBalanceTint,
     lock3A,
     setFocalLength,
+    captureMode,
     setExposureBias,
     resetExposureBias,
     setWhiteBalanceMode,
@@ -119,6 +122,7 @@ export default function CameraScreen() {
       whiteBalanceTint: s.whiteBalanceTint,
       lock3A: s.lock3A,
       setFocalLength: s.setFocalLength,
+      captureMode: s.captureMode,
       setExposureBias: s.setExposureBias,
       resetExposureBias: s.resetExposureBias,
       setWhiteBalanceMode: s.setWhiteBalanceMode,
@@ -172,9 +176,14 @@ export default function CameraScreen() {
     qualityPrioritization: QUALITY_TO_PRIORITY[quality],
   });
 
+  const videoOutput = useVideoOutput({ enableAudio: false });
+
   const outputs = useMemo(
-    () => (photoOutput ? [photoOutput] : []),
-    [photoOutput],
+    () =>
+      [photoOutput, videoOutput].filter(
+        (o): o is NonNullable<typeof o> => o != null,
+      ),
+    [photoOutput, videoOutput],
   );
 
   const targetZoom = useMemo(
@@ -227,6 +236,16 @@ export default function CameraScreen() {
 
   const { state, capture, cancelCountdown } = usePhotoCapture({
     photoOutput,
+    resolveActiveFilm,
+  });
+
+  const {
+    videoBusy,
+    gradingProgress,
+    onVideoPressIn,
+    onVideoPressOut,
+  } = useVideoCapture({
+    videoOutput,
     resolveActiveFilm,
   });
 
@@ -291,6 +310,9 @@ export default function CameraScreen() {
       cancelAnimation(focusOpacitySV);
       focusOpacitySV.value = withTiming(0, { duration: 700 });
     }
+    return () => {
+      cancelAnimation(focusOpacitySV);
+    };
   }, [lock3A, focusOpacitySV]);
 
   // When the user clears the lock from outside the gesture (e.g. flipping
@@ -539,6 +561,7 @@ export default function CameraScreen() {
   }, [focalLengthMm, lastSnappedMmSV]);
 
   const handleShutterPress = () => {
+    if (captureMode === 'video') return;
     if (state.stage === 'countdown') {
       cancelCountdown();
       return;
@@ -658,7 +681,9 @@ export default function CameraScreen() {
         )}
         <GridOverlay visible={grid} />
         <LevelOverlay visible={level} />
-        <CountdownOverlay remaining={state.countdownRemaining} />
+        <CountdownOverlay
+          remaining={captureMode === 'photo' ? state.countdownRemaining : 0}
+        />
         <LockIndicator visible={lock3A} />
       </View>
 
@@ -689,15 +714,37 @@ export default function CameraScreen() {
           className='px-4 pb-2'
           style={{ paddingBottom: insets.bottom }}
         >
+          {gradingProgress > 0 ? (
+            <Text
+              style={{
+                color: 'rgba(255,255,255,0.85)',
+                textAlign: 'center',
+                fontSize: 13,
+                marginBottom: 6,
+              }}
+            >
+              Applying film LUT… {Math.round(gradingProgress * 100)}%
+            </Text>
+          ) : null}
           <View className='flex-row items-center justify-between' style={{ minHeight: 74 }}>
             <View className='flex-1 items-start' style={{ alignItems: 'flex-start' }}>
               <GalleryThumbnail />
             </View>
 
             <ShutterButton
+              captureMode={captureMode}
               onPress={handleShutterPress}
-              busy={state.stage === 'countdown' || state.stage === 'capturing'}
-              disabled={!photoOutput || !device}
+              onVideoPressIn={onVideoPressIn}
+              onVideoPressOut={onVideoPressOut}
+              busy={
+                videoBusy ||
+                state.stage === 'countdown' ||
+                state.stage === 'capturing'
+              }
+              disabled={
+                !device ||
+                (captureMode === 'photo' ? !photoOutput : !videoOutput)
+              }
             />
 
             <View style={{ flex: 1, alignItems: 'flex-end' }}>

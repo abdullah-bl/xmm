@@ -54,6 +54,62 @@ void main() {
 }
 """
 
+  private const val HALD_FRAG = """#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 oFrag;
+uniform float uLevel;
+uniform float uIntensity;
+uniform vec2 uCropScale;
+uniform vec2 uCropOffset;
+uniform float uMirror;
+uniform sampler2D uSource;
+uniform sampler2D uHaldLut;
+vec2 haldIndexToUV(float idx, float W) {
+  float x = mod(idx, W);
+  float y = floor(idx / W);
+  return vec2((x + 0.5) / W, (y + 0.5) / W);
+}
+vec3 sampleHaldCell(sampler2D tex, float r, float g, float b, float cSize, float W) {
+  float idx = b * cSize * cSize + g * cSize + r;
+  return texture(tex, haldIndexToUV(idx, W)).rgb;
+}
+vec3 applyHaldTrilinear(sampler2D tex, vec3 color, float level) {
+  float cSize = level * level;
+  vec3 p = color * (cSize - 1.0);
+  vec3 c0 = floor(p);
+  vec3 t = p - c0;
+  c0 = clamp(c0, vec3(0.0), vec3(cSize - 1.0));
+  vec3 c1 = min(c0 + 1.0, vec3(cSize - 1.0));
+  float W = level * level * level;
+  vec3 s000 = sampleHaldCell(tex, c0.r, c0.g, c0.b, cSize, W);
+  vec3 s100 = sampleHaldCell(tex, c1.r, c0.g, c0.b, cSize, W);
+  vec3 s010 = sampleHaldCell(tex, c0.r, c1.g, c0.b, cSize, W);
+  vec3 s110 = sampleHaldCell(tex, c1.r, c1.g, c0.b, cSize, W);
+  vec3 s001 = sampleHaldCell(tex, c0.r, c0.g, c1.b, cSize, W);
+  vec3 s101 = sampleHaldCell(tex, c1.r, c0.g, c1.b, cSize, W);
+  vec3 s011 = sampleHaldCell(tex, c0.r, c1.g, c1.b, cSize, W);
+  vec3 s111 = sampleHaldCell(tex, c1.r, c1.g, c1.b, cSize, W);
+  vec3 x00 = mix(s000, s100, t.r);
+  vec3 x10 = mix(s010, s110, t.r);
+  vec3 x01 = mix(s001, s101, t.r);
+  vec3 x11 = mix(s011, s111, t.r);
+  vec3 y0 = mix(x00, x10, t.g);
+  vec3 y1 = mix(x01, x11, t.g);
+  return mix(y0, y1, t.b);
+}
+void main() {
+  vec2 uv = vUv * uCropScale + uCropOffset;
+  if (uMirror > 0.5) {
+    uv.x = uCropOffset.x + uCropScale.x * (1.0 - vUv.x);
+  }
+  vec3 src = texture(uSource, uv).rgb;
+  vec3 graded = applyHaldTrilinear(uHaldLut, src, uLevel);
+  vec3 outRgb = mix(src, graded, uIntensity);
+  oFrag = vec4(outRgb, 1.0);
+}
+"""
+
   private const val CUBE_FRAG = """#version 300 es
 precision highp float;
 precision highp sampler2D;
@@ -113,7 +169,7 @@ void main() {
     val cutout = FrameAnalysis.analyze(framePath)
     val sourceBmp = SourceImageLoader.decodeUprightBitmap(imagePath)
     val frameBmp = BitmapFactory.decodeFile(framePath)
-      ?: throw IllegalArgumentException("Could not load frame image: $framePath)
+      ?: throw IllegalArgumentException("Could not load frame image: $framePath")
 
     val crop = CropMath.centreCrop(
       sourceBmp.width,
@@ -124,6 +180,30 @@ void main() {
     val photoH = cutout.height
     val outW = cutout.frameWidth
     val outH = cutout.frameHeight
+
+    val useCube = !lutPath.isNullOrEmpty() && lutPath!!.endsWith(".cube", ignoreCase = true)
+    val useHald = !lutPath.isNullOrEmpty() && !useCube
+    var lutBmp: Bitmap? = null
+    var haldLevel = 0f
+    if (useHald) {
+      lutBmp =
+        BitmapFactory.decodeFile(lutPath!!, BitmapFactory.Options().apply { inScaled = false })
+          ?: throw IllegalStateException("Could not load LUT: $lutPath")
+      if (lutBmp!!.width != lutBmp!!.height) {
+        val w = lutBmp!!.width
+        val h = lutBmp!!.height
+        lutBmp!!.recycle()
+        lutBmp = null
+        throw IllegalStateException("Invalid Hald CLUT: must be square, got ${w}x$h")
+      }
+      try {
+        haldLevel = haldLevelFromLutSide(lutBmp!!.width)
+      } catch (e: Throwable) {
+        lutBmp!!.recycle()
+        lutBmp = null
+        throw e
+      }
+    }
 
     val egl = EglState()
     return try {
@@ -138,16 +218,19 @@ void main() {
       val sourceTex = IntArray(1)
       val outputTex = IntArray(1)
       val lut3d = IntArray(1)
+      val haldTex = IntArray(1)
       GLES30.glGenFramebuffers(1, fbo, 0)
       GLES30.glGenTextures(1, photoTex, 0)
       GLES30.glGenTextures(1, frameTex, 0)
       GLES30.glGenTextures(1, sourceTex, 0)
       GLES30.glGenTextures(1, outputTex, 0)
-      GLES30.glGenTextures(1, lut3d, 0)
+      if (useCube) GLES30.glGenTextures(1, lut3d, 0)
+      if (useHald) GLES30.glGenTextures(1, haldTex, 0)
 
       val photoProgram = buildProgram(PASSTHROUGH_FRAG)
       val compositeProgram = buildProgram(COMPOSITE_FRAG)
       var cubeProgram = 0
+      var haldProgram = 0
       var cube: CubeLutData? = null
 
       try {
@@ -161,22 +244,29 @@ void main() {
         GLUtils.texImage2D(GLES30.GL_TEXTURE_2D, 0, frameBmp, 0)
         bindLinearClamp2d(frameTex[0])
 
-        val useCube = !lutPath.isNullOrEmpty() && lutPath.endsWith(".cube", ignoreCase = true)
-        val activePhotoProgram = if (useCube) {
-          cube = CubeLutParser.parseFile(lutPath!!)
-          cubeProgram = buildProgram(CUBE_FRAG)
-          val n = cube!!.size
-          GLES30.glBindTexture(GLES30.GL_TEXTURE_3D, lut3d[0])
-          val buf: Buffer = ByteBuffer.wrap(cube!!.rgba8).order(ByteOrder.nativeOrder())
-          GLES30.glPixelStorei(GLES30.GL_UNPACK_ALIGNMENT, 1)
-          GLES30.glTexImage3D(
-            GLES30.GL_TEXTURE_3D, 0, GLES30.GL_RGBA8, n, n, n, 0,
-            GLES30.GL_RGBA, GLES30.GL_UNSIGNED_BYTE, buf,
-          )
-          bindLinearClamp3d(lut3d[0])
-          cubeProgram
-        } else {
-          photoProgram
+        val activePhotoProgram = when {
+          useCube -> {
+            cube = CubeLutParser.parseFile(lutPath!!)
+            cubeProgram = buildProgram(CUBE_FRAG)
+            val n = cube!!.size
+            GLES30.glBindTexture(GLES30.GL_TEXTURE_3D, lut3d[0])
+            val buf: Buffer = ByteBuffer.wrap(cube!!.rgba8).order(ByteOrder.nativeOrder())
+            GLES30.glPixelStorei(GLES30.GL_UNPACK_ALIGNMENT, 1)
+            GLES30.glTexImage3D(
+              GLES30.GL_TEXTURE_3D, 0, GLES30.GL_RGBA8, n, n, n, 0,
+              GLES30.GL_RGBA, GLES30.GL_UNSIGNED_BYTE, buf,
+            )
+            bindLinearClamp3d(lut3d[0])
+            cubeProgram
+          }
+          useHald -> {
+            haldProgram = buildProgram(HALD_FRAG)
+            GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, haldTex[0])
+            GLUtils.texImage2D(GLES30.GL_TEXTURE_2D, 0, lutBmp!!, 0)
+            bindLinearClamp2d(haldTex[0])
+            haldProgram
+          }
+          else -> photoProgram
         }
 
         initRgbaTexture2D(photoTex[0], photoW, photoH)
@@ -202,26 +292,41 @@ void main() {
         GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
         GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, sourceTex[0])
         GLES30.glUniform1i(GLES30.glGetUniformLocation(activePhotoProgram, "uSource"), 0)
-        if (useCube && cube != null) {
-          GLES30.glUniform3f(
-            GLES30.glGetUniformLocation(activePhotoProgram, "uDomainMin"),
-            cube!!.domainMin[0],
-            cube!!.domainMin[1],
-            cube!!.domainMin[2],
-          )
-          GLES30.glUniform3f(
-            GLES30.glGetUniformLocation(activePhotoProgram, "uDomainMax"),
-            cube!!.domainMax[0],
-            cube!!.domainMax[1],
-            cube!!.domainMax[2],
-          )
-          GLES30.glUniform1f(
-            GLES30.glGetUniformLocation(activePhotoProgram, "uIntensity"),
-            intensity,
-          )
-          GLES30.glActiveTexture(GLES30.GL_TEXTURE1)
-          GLES30.glBindTexture(GLES30.GL_TEXTURE_3D, lut3d[0])
-          GLES30.glUniform1i(GLES30.glGetUniformLocation(activePhotoProgram, "uLut3d"), 1)
+        when {
+          useCube && cube != null -> {
+            GLES30.glUniform3f(
+              GLES30.glGetUniformLocation(activePhotoProgram, "uDomainMin"),
+              cube!!.domainMin[0],
+              cube!!.domainMin[1],
+              cube!!.domainMin[2],
+            )
+            GLES30.glUniform3f(
+              GLES30.glGetUniformLocation(activePhotoProgram, "uDomainMax"),
+              cube!!.domainMax[0],
+              cube!!.domainMax[1],
+              cube!!.domainMax[2],
+            )
+            GLES30.glUniform1f(
+              GLES30.glGetUniformLocation(activePhotoProgram, "uIntensity"),
+              intensity,
+            )
+            GLES30.glActiveTexture(GLES30.GL_TEXTURE1)
+            GLES30.glBindTexture(GLES30.GL_TEXTURE_3D, lut3d[0])
+            GLES30.glUniform1i(GLES30.glGetUniformLocation(activePhotoProgram, "uLut3d"), 1)
+          }
+          useHald -> {
+            GLES30.glUniform1f(
+              GLES30.glGetUniformLocation(activePhotoProgram, "uLevel"),
+              haldLevel,
+            )
+            GLES30.glUniform1f(
+              GLES30.glGetUniformLocation(activePhotoProgram, "uIntensity"),
+              intensity,
+            )
+            GLES30.glActiveTexture(GLES30.GL_TEXTURE1)
+            GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, haldTex[0])
+            GLES30.glUniform1i(GLES30.glGetUniformLocation(activePhotoProgram, "uHaldLut"), 1)
+          }
         }
         GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, 3)
         checkGl("photo pass")
@@ -266,19 +371,33 @@ void main() {
         GLES30.glDeleteProgram(photoProgram)
         GLES30.glDeleteProgram(compositeProgram)
         if (cubeProgram != 0) GLES30.glDeleteProgram(cubeProgram)
+        if (haldProgram != 0) GLES30.glDeleteProgram(haldProgram)
         GLES30.glDeleteFramebuffers(1, fbo, 0)
         GLES30.glDeleteTextures(1, photoTex, 0)
         GLES30.glDeleteTextures(1, frameTex, 0)
         GLES30.glDeleteTextures(1, sourceTex, 0)
         GLES30.glDeleteTextures(1, outputTex, 0)
-        GLES30.glDeleteTextures(1, lut3d, 0)
+        if (useCube) GLES30.glDeleteTextures(1, lut3d, 0)
+        if (useHald) GLES30.glDeleteTextures(1, haldTex, 0)
         GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, 0)
       }
     } finally {
       sourceBmp.recycle()
       frameBmp.recycle()
+      lutBmp?.recycle()
       egl.release()
     }
+  }
+
+  private fun haldLevelFromLutSide(side: Int): Float {
+    val s = side.toFloat()
+    val r = Math.cbrt(s.toDouble())
+    val l = Math.round(r).toInt()
+    if (l < 2) throw IllegalStateException("Invalid Hald CLUT: side = $side")
+    if (Math.abs(Math.pow(l.toDouble(), 3.0) - s) > 0.5) {
+      throw IllegalStateException("Invalid Hald CLUT: expected side = L^3 (e.g. 64, 512), got $side")
+    }
+    return l.toFloat()
   }
 
   private fun bindFbo(fbo: Int, colorTex: Int, w: Int, h: Int) {

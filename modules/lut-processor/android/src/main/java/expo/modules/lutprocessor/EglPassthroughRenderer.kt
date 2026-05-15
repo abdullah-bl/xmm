@@ -1,3 +1,7 @@
+/**
+ * Centre-crop (and optional LUT) for still captures. A dedicated long-lived EGL
+ * context for burst stills is not used yet — each call still spins EGL up/down.
+ */
 @file:Suppress("ktlint:standard:max-line-length")
 
 package expo.modules.lutprocessor

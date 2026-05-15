@@ -1,7 +1,8 @@
 import { Image } from 'expo-image';
-import { Asset } from 'expo-media-library/next';
+import { Asset, MediaType } from 'expo-media-library/next';
 import { Stack, router, useLocalSearchParams } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
+import { VideoView, useVideoPlayer } from 'expo-video';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Pressable,
@@ -74,20 +75,48 @@ export default function GalleryDetailScreen() {
     };
   }, [asset, id, mutate]);
 
+  const [detailMediaType, setDetailMediaType] = useState<
+    'image' | 'video' | 'unknown'
+  >('unknown');
+
+  useEffect(() => {
+    if (!asset || assetStatus !== 'valid') {
+      setDetailMediaType('unknown');
+      return;
+    }
+    let cancelled = false;
+    asset
+      .getMediaType()
+      .then((t) => {
+        if (!cancelled) {
+          setDetailMediaType(t === MediaType.VIDEO ? 'video' : 'image');
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setDetailMediaType('image');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [asset, assetStatus]);
+
   const handleShare = async () => {
     if (!asset || assetStatus !== 'valid') return;
     try {
       const uri = await asset.getUri();
+      const mt = await asset.getMediaType();
+      const mime =
+        mt === MediaType.VIDEO ? 'video/mp4' : 'image/jpeg';
       await Share.open({
         url: uri,
-        type: 'image/jpeg',
+        type: mime,
         failOnCancel: false,
-        title: 'Share photo',
+        title: mt === MediaType.VIDEO ? 'Share video' : 'Share photo',
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : '';
       if (message === 'User did not share') return;
-      Alert.alert('Could not share photo', message || 'Unknown error');
+      Alert.alert('Could not share', message || 'Unknown error');
     }
   };
 
@@ -145,7 +174,11 @@ export default function GalleryDetailScreen() {
       ) : null}
       <View style={{ flex: 1, backgroundColor: '#000' }}>
         {assetStatus === 'valid' && asset ? (
-          <ZoomableImage asset={asset} />
+          detailMediaType === 'video' ? (
+            <VideoViewer asset={asset} />
+          ) : (
+            <ZoomableImage asset={asset} />
+          )
         ) : assetStatus === 'missing' ? (
           <View
             style={{
@@ -181,6 +214,22 @@ export default function GalleryDetailScreen() {
   );
 }
 
+function VideoViewer({ asset }: { asset: Asset }) {
+  const player = useVideoPlayer(asset.id, (p) => {
+    p.loop = true;
+    p.play();
+  });
+
+  return (
+    <VideoView
+      style={{ flex: 1 }}
+      player={player}
+      nativeControls
+      contentFit="contain"
+    />
+  );
+}
+
 const MIN_SCALE = 1;
 const MAX_SCALE = 5;
 const DOUBLE_TAP_SCALE = 2.5;
@@ -211,11 +260,21 @@ function ZoomableImage({ asset }: ZoomableImageProps) {
     setHighResUri(null);
   }, [asset.id]);
 
+  const cancelledRef = useRef(false);
+  useEffect(() => {
+    cancelledRef.current = false;
+    return () => {
+      cancelledRef.current = true;
+    };
+  }, [asset.id]);
+
   const requestHighRes = () => {
     if (highResUri) return;
     asset
       .getUri()
-      .then((uri) => setHighResUri(uri))
+      .then((uri) => {
+        if (!cancelledRef.current) setHighResUri(uri);
+      })
       .catch(() => {
         // best effort – the low-res thumbnail still works.
       });

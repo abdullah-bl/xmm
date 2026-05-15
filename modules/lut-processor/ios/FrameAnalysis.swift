@@ -101,3 +101,11 @@ extension FrameAnalysisError: CustomStringConvertible {
     }
   }
 }
+
+private func normalizeFilePath(_ path: String) -> String {
+  var s = path
+  if s.hasPrefix("file://") {
+    s = String(s.dropFirst(7))
+  }
+  return (s as NSString).standardizingPath
+}

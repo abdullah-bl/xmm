@@ -185,4 +185,19 @@ fragment float4 compositeFragment(
   float3 outRgb = mix(photoRgb, frameCol.rgb, frameCol.a);
   return float4(outRgb, 1.0f);
 }
+
+/// Video frames from AVAssetReader are typically `bgra8Unorm`. LUT shaders expect
+/// sRGB-ish RGB order in `.rgb` — swizzle once before the main LUT stack.
+fragment float4 bgraToRgbaFragment(
+  VertOut in [[stage_in]],
+  texture2d<float, access::sample> source [[texture(0)]]
+) {
+  constexpr sampler smp(
+    address::clamp_to_edge,
+    filter::linear,
+    mip_filter::none
+  );
+  float4 t = source.sample(smp, in.uv);
+  return float4(t.b, t.g, t.r, 1.0f);
+}
 """#

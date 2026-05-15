@@ -17,6 +17,7 @@ const PAGE_SIZE = 60;
 export interface GalleryPhoto {
   /** Asset.id – works directly as `<Image source>` URI on iOS/Android. */
   id: string;
+  mediaType: 'image' | 'video';
 }
 
 interface KeyShape {
@@ -36,12 +37,16 @@ async function fetchPage({ page }: KeyShape): Promise<GalleryPhoto[]> {
   const granted = await ensureMediaPermission();
   if (!granted) return [];
   const assets: Asset[] = await new Query()
-    .eq(AssetField.MEDIA_TYPE, MediaType.IMAGE)
+    .within(AssetField.MEDIA_TYPE, [MediaType.IMAGE, MediaType.VIDEO])
     .orderBy({ key: AssetField.CREATION_TIME, ascending: false })
     .limit(PAGE_SIZE)
     .offset(page * PAGE_SIZE)
     .exe();
-  return assets.map((asset) => ({ id: asset.id }));
+  const types = await Promise.all(assets.map((a) => a.getMediaType()));
+  return assets.map((asset, i) => ({
+    id: asset.id,
+    mediaType: types[i] === MediaType.VIDEO ? 'video' : 'image',
+  }));
 }
 
 export const GALLERY_SWR_KEY_PREFIX = 'gallery';

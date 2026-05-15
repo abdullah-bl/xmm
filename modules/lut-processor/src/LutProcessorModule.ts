@@ -22,13 +22,55 @@ export interface ProcessCaptureOptions {
   mirror?: boolean;
 }
 
-interface LutProcessorNativeModule {
-  /**
-   * Single decode + GPU crop (+ optional LUT) + optional frame composite +
-   * single encode.
-   */
-  processCapture(imagePath: string, options: ProcessCaptureOptions): Promise<string>;
-  transferCoreExif(sourcePath: string, targetPath: string): Promise<string>;
+/** Options for post-export video grading (`gradeVideo`). Same crop/LUT fields as stills; no JPEG quality. */
+export interface GradeVideoOptions {
+  aspectRatio?: AspectRatio;
+  cropAspectRatio?: number;
+  lutPath?: string | null;
+  framePath?: string | null;
+  intensity?: number;
+  mirror?: boolean;
 }
 
-export default requireNativeModule<LutProcessorNativeModule>("LutProcessor");
+type GradeVideoProgressPayload = { progress: number };
+
+interface LutProcessorNativeModule {
+  processCapture(imagePath: string, options: ProcessCaptureOptions): Promise<string>;
+  transferCoreExif(sourcePath: string, targetPath: string): Promise<string>;
+  gradeVideo(
+    inputPath: string,
+    outputPath: string,
+    options: GradeVideoOptions,
+  ): Promise<string>;
+  cancelGradeVideo(): Promise<void>;
+  addListener(
+    eventName: "gradeVideoProgress",
+    listener: (event: GradeVideoProgressPayload) => void,
+  ): { remove(): void };
+}
+
+const native = requireNativeModule<LutProcessorNativeModule>("LutProcessor");
+
+export function gradeVideo(
+  inputPath: string,
+  outputPath: string,
+  options: GradeVideoOptions = {},
+): Promise<string> {
+  return native.gradeVideo(inputPath, outputPath, options);
+}
+
+export function cancelGradeVideo(): Promise<void> {
+  return native.cancelGradeVideo();
+}
+
+/** Subscribe to `gradeVideo` progress in `[0, 1]` (time-based on iOS). */
+export function addGradeVideoProgressListener(
+  listener: (progress: number) => void,
+): { remove(): void } {
+  const sub = native.addListener("gradeVideoProgress", (e) => {
+    listener(typeof e.progress === "number" ? e.progress : 0);
+  });
+  return { remove: () => sub.remove() };
+}
+
+export default native;

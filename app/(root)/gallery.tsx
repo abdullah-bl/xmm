@@ -61,12 +61,13 @@ export default function GalleryScreen() {
           onEndReachedThreshold={0.5}
           ListEmptyComponent={
             <View style={{ paddingVertical: 60, alignItems: 'center' }}>
-              <Text style={{ color: muted }}>No photos yet</Text>
+              <Text style={{ color: muted }}>No photos or videos yet</Text>
             </View>
           }
           renderItem={({ item }) => (
             <GalleryCell
               id={item.id}
+              mediaType={item.mediaType}
               size={cellSize}
               background={surface}
               onMissing={handleMissingPhoto}
@@ -80,12 +81,19 @@ export default function GalleryScreen() {
 
 interface GalleryCellProps {
   id: string;
+  mediaType: 'image' | 'video';
   size: number;
   background: string;
   onMissing: (id: string) => void;
 }
 
-function GalleryCell({ id, size, background, onMissing }: GalleryCellProps) {
+function GalleryCell({
+  id,
+  mediaType,
+  size,
+  background,
+  onMissing,
+}: GalleryCellProps) {
   const reportedRef = useRef(false);
 
   const handleError = useCallback(() => {
@@ -98,10 +106,11 @@ function GalleryCell({ id, size, background, onMissing }: GalleryCellProps) {
     <Link href={{ pathname: '/gallery/[id]', params: { id } }} asChild>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel="Open photo"
+        accessibilityLabel={mediaType === 'video' ? 'Open video' : 'Open photo'}
         style={({ pressed }) => ({
           padding: GAP / 2,
           opacity: pressed ? 0.7 : 1,
+          position: 'relative',
         })}
       >
         <Image
@@ -117,6 +126,24 @@ function GalleryCell({ id, size, background, onMissing }: GalleryCellProps) {
           recyclingKey={id}
           onError={handleError}
         />
+        {mediaType === 'video' ? (
+          <View
+            pointerEvents="none"
+            style={{
+              position: 'absolute',
+              right: GAP + 4,
+              bottom: GAP + 4,
+              backgroundColor: 'rgba(0,0,0,0.55)',
+              paddingHorizontal: 6,
+              paddingVertical: 2,
+              borderRadius: 4,
+            }}
+          >
+            <Text style={{ color: '#fff', fontSize: 10, fontWeight: '600' }}>
+              VIDEO
+            </Text>
+          </View>
+        ) : null}
       </Pressable>
     </Link>
   );

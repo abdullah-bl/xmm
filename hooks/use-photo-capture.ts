@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Platform } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { File } from 'expo-file-system';
@@ -76,15 +76,26 @@ export function usePhotoCapture({
   const queueRef = useRef<ProcessingJob[]>([]);
   const drainRunningRef = useRef(false);
   const { mutate } = useSWRConfig();
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  const safeSetState = useCallback((next: CaptureState) => {
+    if (mountedRef.current) setState(next);
+  }, []);
 
   const cancelCountdown = useCallback(() => {
     if (cancelTimerRef.current) {
       cancelTimerRef.current.cancelled = true;
       cancelTimerRef.current = null;
     }
-    setState({ stage: 'idle', countdownRemaining: 0 });
+    safeSetState({ stage: 'idle', countdownRemaining: 0 });
     isCapturingRef.current = false;
-  }, []);
+  }, [safeSetState]);
 
   const runOneJob = useCallback(
     async (job: ProcessingJob) => {
@@ -119,16 +130,20 @@ export function usePhotoCapture({
           });
           await invalidateGalleryCache(mutate);
         } catch (error) {
+          if (mountedRef.current) {
+            Alert.alert(
+              'Could not save photo',
+              error instanceof Error ? error.message : 'Unknown error',
+            );
+          }
+        }
+      } catch (error) {
+        if (mountedRef.current) {
           Alert.alert(
-            'Could not save photo',
+            'Capture failed',
             error instanceof Error ? error.message : 'Unknown error',
           );
         }
-      } catch (error) {
-        Alert.alert(
-          'Capture failed',
-          error instanceof Error ? error.message : 'Unknown error',
-        );
       } finally {
         safeDelete(visionPath);
         safeDelete(processedUri);
@@ -173,7 +188,7 @@ export function usePhotoCapture({
           isCapturingRef.current = false;
           return;
         }
-        setState({ stage: 'countdown', countdownRemaining: s });
+        safeSetState({ stage: 'countdown', countdownRemaining: s });
         if (Platform.OS === 'ios' && s <= 3) {
           Haptics.selectionAsync().catch(() => {});
         }
@@ -186,7 +201,7 @@ export function usePhotoCapture({
       }
     }
 
-    setState({ stage: 'capturing', countdownRemaining: 0 });
+    safeSetState({ stage: 'capturing', countdownRemaining: 0 });
 
     let captured: PhotoFile | null = null;
     let handedOff = false;
@@ -226,10 +241,12 @@ export function usePhotoCapture({
       handedOff = true;
       void drainQueue();
     } catch (error) {
-      Alert.alert(
-        'Capture failed',
-        error instanceof Error ? error.message : 'Unknown error',
-      );
+      if (mountedRef.current) {
+        Alert.alert(
+          'Capture failed',
+          error instanceof Error ? error.message : 'Unknown error',
+        );
+      }
     } finally {
       if (!handedOff && captured) {
         const p =
@@ -238,10 +255,10 @@ export function usePhotoCapture({
             : `file://${captured.filePath}`;
         safeDelete(p);
       }
-      setState({ stage: 'idle', countdownRemaining: 0 });
+      safeSetState({ stage: 'idle', countdownRemaining: 0 });
       isCapturingRef.current = false;
     }
-  }, [drainQueue, photoOutput, resolveActiveFilm]);
+  }, [drainQueue, photoOutput, resolveActiveFilm, safeSetState]);
 
   return { state, capture, cancelCountdown };
 }

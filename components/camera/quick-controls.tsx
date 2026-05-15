@@ -8,8 +8,8 @@ import Animated, {
 import { useShallow } from 'zustand/react/shallow';
 
 import { ENABLE_PRO_CAMERA } from '@/lib/feature-flags';
-import { useCameraStore } from '@/stores/camera-store';
 import type { FocalLengthMm, WhiteBalanceMode } from '@/stores/camera-store';
+import { useCameraStore } from '@/stores/camera-store';
 
 import {
   FocalLengthInlinePicker,
@@ -67,7 +67,7 @@ export function QuickControls({
   const toolbarOpacity = useSharedValue(1);
   const pickerOpacity = useSharedValue(0);
 
-  const { flashMode, cycleFlash, timer, cycleTimer, togglePosition, position } =
+  const { flashMode, cycleFlash, timer, cycleTimer, togglePosition, position, captureMode, cycleCaptureMode } =
     useCameraStore(
       useShallow((s) => ({
         flashMode: s.flashMode,
@@ -76,6 +76,8 @@ export function QuickControls({
         cycleTimer: s.cycleTimer,
         togglePosition: s.togglePosition,
         position: s.position,
+        captureMode: s.captureMode,
+        cycleCaptureMode: s.cycleCaptureMode,
       })),
     );
 
@@ -152,6 +154,16 @@ export function QuickControls({
           },
         ]}
       >
+        {/* <ToolbarButton
+          icon={captureMode === 'video' ? 'video.fill' : 'camera.fill'}
+          iconFallback={captureMode === 'video' ? 'VID' : 'PHO'}
+          label={captureMode === 'video' ? 'Video' : 'Photo'}
+          active={captureMode === 'video'}
+          onPress={cycleCaptureMode}
+          accessibilityLabel={
+            captureMode === 'video' ? 'Video mode, tap for photo mode' : 'Photo mode, tap for video mode'
+          }
+        /> */}
         <ToolbarButton
           icon={flash.icon}
           iconFallback={flash.fallback}
