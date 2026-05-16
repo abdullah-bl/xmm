@@ -18,6 +18,9 @@ export const Collections = {
 } as const
 export type Collections = typeof Collections[keyof typeof Collections]
 
+export const FEEDBACK_TYPES = ['bug', 'suggestion', 'praise', 'other'] as const;
+export type FeedbackType = (typeof FEEDBACK_TYPES)[number];
+
 // Alias types for improved usability
 export type IsoDateString = string
 export type IsoAutoDateString = string & { readonly autodate: unique symbol }
@@ -246,3 +249,5 @@ export type TypedPocketBase = {
 		idOrName: T
 	): RecordService<CollectionResponses[T]>
 } & PocketBase
+
+export type FeedbackCreate = Create<'feedbacks'>

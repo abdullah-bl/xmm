@@ -2,15 +2,14 @@ import { useCallback, useState } from 'react';
 
 import client from '@/lib/client';
 import { buildAppInfo, buildDeviceInfo } from '@/lib/device-info';
-import type { FeedbackPayload, FeedbackType } from '@/types/feedback';
+import {
+  Collections,
+  type FeedbackCreate,
+  type FeedbackType,
+} from '@/types/backend.types';
 
 export interface SubmitFeedbackInput {
   content: string;
-  /**
-   * Either a canonical `FeedbackType` or, when set to `"other"`, the free-text
-   * label the user typed. The hook forwards the resolved type as-is to the
-   * backend, which only requires a string.
-   */
   type: FeedbackType;
   customType?: string;
 }
@@ -40,25 +39,17 @@ export function useFeedback(): UseFeedbackResult {
         ? input.customType.trim()
         : input.type;
 
-    const payload: FeedbackPayload = {
+    const payload = {
       content: trimmed,
       type: resolvedType,
       device: buildDeviceInfo(),
       app: buildAppInfo(),
-    };
+    } satisfies FeedbackCreate;
 
     setBusy(true);
     setError(null);
     try {
-      // The `feedback` collection is not part of the generated PocketBase
-      // typings; cast to satisfy the typed client wrapper.
-      await (client as unknown as {
-        collection: (name: string) => {
-          create: (data: unknown) => Promise<unknown>;
-        };
-      })
-        .collection('feedback')
-        .create(payload);
+      await client.collection(Collections.Feedbacks).create(payload);
     } catch (e) {
       const err = e instanceof Error ? e : new Error(String(e));
       setError(err);

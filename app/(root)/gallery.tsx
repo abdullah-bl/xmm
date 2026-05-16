@@ -51,30 +51,29 @@ export default function GalleryScreen() {
   return (
     <>
       <Stack.Screen.Title large>Gallery</Stack.Screen.Title>
-      <View style={{ flex: 1, backgroundColor: background }}>
-        <FlashList<GalleryPhoto>
-          contentInsetAdjustmentBehavior="automatic"
-          data={photos}
-          keyExtractor={(photo) => photo.id}
-          numColumns={COLUMNS}
-          onEndReached={loadMore}
-          onEndReachedThreshold={0.5}
-          ListEmptyComponent={
-            <View style={{ paddingVertical: 60, alignItems: 'center' }}>
-              <Text style={{ color: muted }}>No photos or videos yet</Text>
-            </View>
-          }
-          renderItem={({ item }) => (
-            <GalleryCell
-              id={item.id}
-              mediaType={item.mediaType}
-              size={cellSize}
-              background={surface}
-              onMissing={handleMissingPhoto}
-            />
-          )}
-        />
-      </View>
+      <FlashList<GalleryPhoto>
+        style={{ flex: 1, backgroundColor: background }}
+        contentInsetAdjustmentBehavior="automatic"
+        data={photos}
+        keyExtractor={(photo) => photo.id}
+        numColumns={COLUMNS}
+        onEndReached={loadMore}
+        onEndReachedThreshold={0.5}
+        ListEmptyComponent={
+          <View style={{ paddingVertical: 60, alignItems: 'center' }}>
+            <Text style={{ color: muted }}>No photos or videos yet</Text>
+          </View>
+        }
+        renderItem={({ item }) => (
+          <GalleryCell
+            id={item.id}
+            mediaType={item.mediaType}
+            size={cellSize}
+            background={surface}
+            onMissing={handleMissingPhoto}
+          />
+        )}
+      />
     </>
   );
 }

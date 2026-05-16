@@ -1,7 +1,9 @@
 import Constants from 'expo-constants';
 import { Stack, useRouter } from 'expo-router';
+import * as Updates from 'expo-updates';
 import type { ReactNode } from 'react';
 import {
+  ActivityIndicator,
   Pressable,
   ScrollView,
   Switch,
@@ -9,6 +11,7 @@ import {
   View,
 } from 'react-native';
 
+import { useManualUpdate } from '@/hooks/use-manual-update';
 import { useThemeColor } from '@/hooks/useThemeColor';
 import {
   type AspectRatio,
@@ -40,6 +43,7 @@ export default function SettingsScreen() {
   const surface = useThemeColor('surface');
   const separator = useThemeColor('separator');
   const accent = useThemeColor('accent');
+  const accentForeground = useThemeColor('accent-foreground');
 
   const aspectRatio = useCameraStore((s) => s.aspectRatio);
   const setAspectRatio = useCameraStore((s) => s.setAspectRatio);
@@ -59,6 +63,10 @@ export default function SettingsScreen() {
   const setPhotoHDR = useCameraStore((s) => s.setPhotoHDR);
 
   const version = Constants.expoConfig?.version ?? '—';
+  const { checking, checkForUpdates, updatesEnabled } = useManualUpdate();
+  const updateIdShort = Updates.updateId
+    ? Updates.updateId.slice(0, 8)
+    : null;
 
   const cycleAspect = () => {
     const next =
@@ -149,6 +157,27 @@ export default function SettingsScreen() {
           label: 'Version',
           value: version,
         },
+        ...(updatesEnabled
+          ? [
+              {
+                key: 'check-updates',
+                label: checking ? 'Checking…' : 'Check for Updates',
+                onPress: () => {
+                  if (!checking) void checkForUpdates();
+                },
+                accent: true,
+              },
+            ]
+          : []),
+        ...(updateIdShort
+          ? [
+              {
+                key: 'update-id',
+                label: 'Update',
+                value: updateIdShort,
+              },
+            ]
+          : []),
         {
           key: 'privacy',
           label: 'Privacy Policy',
@@ -193,6 +222,8 @@ export default function SettingsScreen() {
                 foreground={foreground}
                 muted={muted}
                 accent={row.accent ? accent : undefined}
+                busy={row.key === 'check-updates' && checking}
+                accentForeground={accentForeground}
               />
             ))}
           </SettingsSection>
@@ -276,6 +307,8 @@ function SettingsRow({
   foreground,
   muted,
   accent,
+  accentForeground,
+  busy,
 }: {
   label: string;
   value?: string;
@@ -286,6 +319,8 @@ function SettingsRow({
   foreground: string;
   muted: string;
   accent?: string;
+  accentForeground?: string;
+  busy?: boolean;
 }) {
   const hasSwitch = switchValue !== undefined && onSwitchChange;
   const content = (
@@ -300,6 +335,9 @@ function SettingsRow({
           trackColor={{ true: switchTrackColor }}
           ios_backgroundColor={muted}
         />
+      ) : null}
+      {busy ? (
+        <ActivityIndicator color={accentForeground ?? foreground} />
       ) : null}
       {value ? (
         <Text style={{ color: muted, fontSize: 15 }}>{value}</Text>

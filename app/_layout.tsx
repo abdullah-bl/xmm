@@ -38,9 +38,13 @@ Sentry.init({
 
   enableLogs: true,
 
-  replaysSessionSampleRate: 0.1,
-  replaysOnErrorSampleRate: 1,
-  integrations: [Sentry.mobileReplayIntegration()],
+  // Session Replay disabled to work around a sentry-cocoa main-thread
+  // mutex hang in SentrySessionReplay.takeScreenshot that was causing
+  // iOS watchdog terminations (App Hang Fully Blocked >= 2000 ms).
+  // Re-enable after bumping @sentry/react-native and shipping a native build.
+  replaysSessionSampleRate: 0,
+  replaysOnErrorSampleRate: 0,
+  integrations: [],
 
   // uncomment the line below to enable Spotlight (https://spotlightjs.com)
   // spotlight: __DEV__,

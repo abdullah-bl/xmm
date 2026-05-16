@@ -19,7 +19,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SfIcon } from '@/components/camera/sf-icon';
 import { useFeedback } from '@/hooks/use-feedback';
 import { useThemeColor } from '@/hooks/useThemeColor';
-import type { FeedbackType } from '@/types/feedback';
+import type { FeedbackType } from '@/types/backend.types';
 
 interface TypeOption {
   id: FeedbackType;

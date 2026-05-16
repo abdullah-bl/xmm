@@ -1,5 +1,6 @@
+import { useFocusEffect } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { Pressable, View } from 'react-native';
 import { useShallow } from 'zustand/react/shallow';
 
@@ -41,6 +42,10 @@ export function TopBar() {
 
   const router = useRouter();
 
+  useFocusEffect(
+    useCallback(() => () => setExpanded(false), []),
+  );
+
   const qualityInfo = QUALITY_ICONS[quality];
 
   const cycleQuality = () => {
@@ -49,6 +54,7 @@ export function TopBar() {
   };
 
   const openSettings = () => {
+    setExpanded(false);
     router.push('/settings');
   };
 

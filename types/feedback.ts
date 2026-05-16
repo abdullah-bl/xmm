@@ -1,4 +1,4 @@
-export type FeedbackType = 'bug' | 'suggestion' | 'praise' | 'other';
+export type { FeedbackType } from './backend.types';
 
 export interface FeedbackDeviceInfo {
   os: string;
@@ -17,16 +17,4 @@ export interface FeedbackAppInfo {
   runtimeVersion?: string;
   channel?: string;
   updateId?: string;
-}
-
-export interface FeedbackPayload {
-  /** Free-form message body. */
-  content: string;
-  /**
-   * Either one of the canonical `FeedbackType` values, or a custom label
-   * provided by the user via the "Other" field.
-   */
-  type: FeedbackType | string;
-  device: FeedbackDeviceInfo;
-  app: FeedbackAppInfo;
 }

@@ -689,7 +689,7 @@ export default function CameraScreen() {
 
       {/* Bottom Section */}
       <View className='bg-black overflow-hidden  rounded-3xl min-h-1/4'>
-        <View style={styles.midSection}>
+        <View style={styles.midSection} className='flex-1'>
           <QuickControls
             focalPresets={availableFocals}
             focalLengthMm={focalLengthMm}
@@ -726,7 +726,7 @@ export default function CameraScreen() {
               Applying film LUT… {Math.round(gradingProgress * 100)}%
             </Text>
           ) : null}
-          <View className='flex-row items-center justify-between' style={{ minHeight: 74 }}>
+          <View className='flex-row items-center justify-between'>
             <View className='flex-1 items-start' style={{ alignItems: 'flex-start' }}>
               <GalleryThumbnail />
             </View>

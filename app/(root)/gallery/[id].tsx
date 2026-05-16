@@ -21,11 +21,11 @@ import Animated, {
 import Share from 'react-native-share';
 import { useSWRConfig } from 'swr';
 
-import { useFilm } from '@/hooks/use-films';
 import {
   invalidateGalleryCache,
   removePhotoFromGalleryCache,
 } from '@/hooks/use-gallery';
+import { formatCaptureDate } from '@/lib/format-date';
 import {
   deletePhotoMetadata,
   getPhotoMetadata,
@@ -46,7 +46,7 @@ export default function GalleryDetailScreen() {
     [id],
   );
   const asset = useMemo(() => (id ? new Asset(id) : null), [id]);
-  const { data: film } = useFilm(metadata?.filmId ?? null);
+  const [assetCreationTime, setAssetCreationTime] = useState<number | null>(null);
 
   useEffect(() => {
     if (!id || !asset) {
@@ -78,6 +78,25 @@ export default function GalleryDetailScreen() {
   const [detailMediaType, setDetailMediaType] = useState<
     'image' | 'video' | 'unknown'
   >('unknown');
+
+  useEffect(() => {
+    if (!asset || assetStatus !== 'valid') {
+      setAssetCreationTime(null);
+      return;
+    }
+    let cancelled = false;
+    asset
+      .getCreationTime()
+      .then((t) => {
+        if (!cancelled) setAssetCreationTime(t);
+      })
+      .catch(() => {
+        if (!cancelled) setAssetCreationTime(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [asset, assetStatus]);
 
   useEffect(() => {
     if (!asset || assetStatus !== 'valid') {
@@ -149,7 +168,11 @@ export default function GalleryDetailScreen() {
     );
   };
 
-  const title = film?.name ?? metadata?.filmName ?? '';
+  const title = useMemo(() => {
+    const timestamp = metadata?.createdAt ?? assetCreationTime;
+    if (timestamp == null) return '';
+    return formatCaptureDate(timestamp);
+  }, [metadata?.createdAt, assetCreationTime]);
 
   // Photo viewer is intentionally a black canvas regardless of theme — Apple
   // HIG recommends a neutral dark backdrop for full-bleed media.
