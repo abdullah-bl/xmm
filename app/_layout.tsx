@@ -4,6 +4,7 @@ import {
   Rubik_600SemiBold,
   Rubik_700Bold,
 } from "@expo-google-fonts/rubik";
+import * as Sentry from '@sentry/react-native';
 import * as Font from "expo-font";
 import { Slot } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
@@ -25,6 +26,26 @@ Appearance.setColorScheme("dark");
 
 SplashScreen.preventAutoHideAsync().catch(() => { });
 
+// Initialize Sentry at module scope so it runs before `Sentry.wrap` below.
+// Calling init() inside a useEffect happens after the wrap, which causes
+// the "App Start Span could not be finished" warning on cold start.
+Sentry.init({
+  dsn: 'https://ffb807911ece4d0d04ad9999c8b05039@o963140.ingest.us.sentry.io/4511398235537408',
+
+  // Adds more context data to events (IP address, cookies, user, etc.)
+  // For more information, visit: https://docs.sentry.io/platforms/react-native/data-management/data-collected/
+  sendDefaultPii: true,
+
+  enableLogs: true,
+
+  replaysSessionSampleRate: 0.1,
+  replaysOnErrorSampleRate: 1,
+  integrations: [Sentry.mobileReplayIntegration()],
+
+  // uncomment the line below to enable Spotlight (https://spotlightjs.com)
+  // spotlight: __DEV__,
+});
+
 const RUBIK_REGULAR = "Rubik_400Regular";
 
 // Apply Rubik as the default font for every <Text /> in the app without
@@ -39,7 +60,7 @@ TextWithDefaults.defaultProps.style = [
   TextWithDefaults.defaultProps.style,
 ];
 
-export default function AppLayout() {
+export default Sentry.wrap(function AppLayout() {
   const [fontsReady, setFontsReady] = useState(false);
 
   useEffect(() => {
@@ -67,7 +88,7 @@ export default function AppLayout() {
   useEffect(() => {
     // Best-effort: import any photos written by the previous sandbox gallery
     // into the system photo library. Runs at most once per install.
-    migrateLegacySandboxGallery().catch(() => {});
+    migrateLegacySandboxGallery().catch(() => { });
   }, []);
 
   useUpdatesCheck();
@@ -80,4 +101,4 @@ export default function AppLayout() {
       <Slot />
     </GestureHandlerRootView>
   );
-}
+});
