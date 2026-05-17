@@ -21,12 +21,49 @@ import type { FilmsResponse } from '@/types/backend.types';
 
 const UNCATEGORIZED = 'Other';
 
+type FilmFilter =
+  | { kind: 'all' }
+  | { kind: 'favorites' }
+  | { kind: 'featured' }
+  | { kind: 'category'; category: string };
+
 interface FilmSection {
   key: string;
-  title: string;
+  title?: string;
   icon?: SFSymbol;
   iconColor?: string;
   films: FilmsResponse[];
+}
+
+function filmCategory(film: FilmsResponse): string {
+  return film.category?.trim() || UNCATEGORIZED;
+}
+
+function sortCategories(categories: string[]): string[] {
+  return [...categories].sort((a, b) => {
+    if (a === UNCATEGORIZED) return 1;
+    if (b === UNCATEGORIZED) return -1;
+    return a.localeCompare(b);
+  });
+}
+
+function applyFilter(
+  films: FilmsResponse[],
+  filter: FilmFilter,
+  favorites: string[],
+): FilmsResponse[] {
+  switch (filter.kind) {
+    case 'all':
+      return films;
+    case 'favorites': {
+      const favoriteSet = new Set(favorites);
+      return films.filter((f) => favoriteSet.has(f.id));
+    }
+    case 'featured':
+      return films.filter((f) => f.featured === true);
+    case 'category':
+      return films.filter((f) => filmCategory(f) === filter.category);
+  }
 }
 
 function formatRelativeTime(timestamp: number | null): string | null {
@@ -62,29 +99,45 @@ export default function FilmsScreen() {
   const accentForeground = useThemeColor('accent-foreground');
 
   const [search, setSearch] = useState('');
+  const [filter, setFilter] = useState<FilmFilter>({ kind: 'all' });
   const [refreshing, setRefreshing] = useState(false);
+
+  const categories = useMemo(() => {
+    if (!films?.length) return [];
+    const cats = new Set<string>();
+    for (const film of films) {
+      cats.add(filmCategory(film));
+    }
+    return sortCategories(Array.from(cats));
+  }, [films]);
 
   const filtered = useMemo(() => {
     if (!films) return [];
+    const byFilter = applyFilter(films, filter, favorites);
     const q = search.trim().toLowerCase();
-    if (!q) return films;
-    return films.filter(
+    if (!q) return byFilter;
+    return byFilter.filter(
       (f) =>
         f.name?.toLowerCase().includes(q) ||
         f.category?.toLowerCase().includes(q) ||
         f.description?.toLowerCase().includes(q),
     );
-  }, [films, search]);
+  }, [films, filter, favorites, search]);
 
   const sections = useMemo<FilmSection[]>(() => {
     if (!filtered.length) return [];
+
+    if (filter.kind !== 'all') {
+      return [{ key: '__filtered', films: filtered }];
+    }
+
     const favoriteSet = new Set(favorites);
     const favs = filtered.filter((f) => favoriteSet.has(f.id));
 
     const byCategory = new Map<string, FilmsResponse[]>();
     for (const film of filtered) {
       if (favoriteSet.has(film.id)) continue;
-      const cat = film.category?.trim() || UNCATEGORIZED;
+      const cat = filmCategory(film);
       if (!byCategory.has(cat)) byCategory.set(cat, []);
       byCategory.get(cat)!.push(film);
     }
@@ -99,12 +152,7 @@ export default function FilmsScreen() {
         films: favs,
       });
     }
-    const sortedCats = Array.from(byCategory.keys()).sort((a, b) => {
-      if (a === UNCATEGORIZED) return 1;
-      if (b === UNCATEGORIZED) return -1;
-      return a.localeCompare(b);
-    });
-    for (const cat of sortedCats) {
+    for (const cat of sortCategories(Array.from(byCategory.keys()))) {
       result.push({
         key: cat,
         title: cat,
@@ -112,7 +160,14 @@ export default function FilmsScreen() {
       });
     }
     return result;
-  }, [filtered, favorites, accent]);
+  }, [filtered, filter.kind, favorites, accent]);
+
+  const handleFilterChange = useCallback((next: FilmFilter) => {
+    if (Platform.OS === 'ios') {
+      Haptics.selectionAsync().catch(() => { });
+    }
+    setFilter(next);
+  }, []);
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -130,15 +185,6 @@ export default function FilmsScreen() {
 
   return (
     <>
-
-      <Stack.Screen.Title large>Films</Stack.Screen.Title>
-      <Stack.SearchBar
-        onChangeText={(e) => setSearch(e.nativeEvent.text ?? '')}
-      />
-      <Stack.Toolbar placement="bottom">
-        <Stack.Toolbar.SearchBarSlot />
-      </Stack.Toolbar>
-
       <ScrollView
         contentInsetAdjustmentBehavior="automatic"
         style={{ flex: 1 }}
@@ -187,7 +233,7 @@ export default function FilmsScreen() {
               muted={muted}
             />
           ) : filtered.length === 0 ? (
-            <EmptyState search={search} muted={muted} />
+            <EmptyState search={search} filter={filter} muted={muted} />
           ) : (
             sections.map((section) => (
               <Section
@@ -221,6 +267,77 @@ export default function FilmsScreen() {
           ) : null}
         </View>
       </ScrollView>
+
+      <FilmsHeader
+        filter={filter}
+        categories={categories}
+        onSearchChange={setSearch}
+        onFilterChange={handleFilterChange}
+      />
+    </>
+  );
+}
+
+function FilmsHeader({
+  filter,
+  categories,
+  onSearchChange,
+  onFilterChange,
+}: {
+  filter: FilmFilter;
+  categories: string[];
+  onSearchChange: (text: string) => void;
+  onFilterChange: (filter: FilmFilter) => void;
+}) {
+  return (
+    <>
+      <Stack.Screen.Title large>Films</Stack.Screen.Title>
+      <Stack.SearchBar
+        onChangeText={(e) => onSearchChange(e.nativeEvent.text ?? '')}
+      />
+      <Stack.Toolbar placement="bottom">
+        <Stack.Toolbar.SearchBarSlot />
+        <Stack.Toolbar.Spacer />
+        <Stack.Toolbar.Menu>
+          <Stack.Toolbar.Icon sf="ellipsis.circle" />
+          <Stack.Toolbar.Label>Options</Stack.Toolbar.Label>
+          <Stack.Toolbar.Menu inline>
+            <Stack.Toolbar.MenuAction
+              isOn={filter.kind === 'all'}
+              onPress={() => onFilterChange({ kind: 'all' })}
+            >
+              All Films
+            </Stack.Toolbar.MenuAction>
+            <Stack.Toolbar.MenuAction
+              icon="star.fill"
+              isOn={filter.kind === 'favorites'}
+              onPress={() => onFilterChange({ kind: 'favorites' })}
+            >
+              Favorites
+            </Stack.Toolbar.MenuAction>
+            <Stack.Toolbar.MenuAction
+              icon="sparkles"
+              isOn={filter.kind === 'featured'}
+              onPress={() => onFilterChange({ kind: 'featured' })}
+            >
+              Featured
+            </Stack.Toolbar.MenuAction>
+          </Stack.Toolbar.Menu>
+          {categories.length > 0 ? (
+            <Stack.Toolbar.Menu inline title="Category">
+              {categories.map((cat) => (
+                <Stack.Toolbar.MenuAction
+                  key={cat}
+                  isOn={filter.kind === 'category' && filter.category === cat}
+                  onPress={() => onFilterChange({ kind: 'category', category: cat })}
+                >
+                  {cat}
+                </Stack.Toolbar.MenuAction>
+              ))}
+            </Stack.Toolbar.Menu>
+          ) : null}
+        </Stack.Toolbar.Menu>
+      </Stack.Toolbar>
     </>
   );
 }
@@ -505,7 +622,39 @@ function ErrorState({
   );
 }
 
-function EmptyState({ search, muted }: { search: string; muted: string }) {
+function emptyStateMessage(search: string, filter: FilmFilter): string {
+  const q = search.trim();
+  if (q && filter.kind !== 'all') {
+    const filterLabel =
+      filter.kind === 'favorites'
+        ? 'favorites'
+        : filter.kind === 'featured'
+          ? 'featured films'
+          : filter.category;
+    return `No results for “${q}” in ${filterLabel}`;
+  }
+  if (q) return `No results for “${q}”`;
+  switch (filter.kind) {
+    case 'favorites':
+      return 'No favorites yet';
+    case 'featured':
+      return 'No featured films';
+    case 'category':
+      return `No films in ${filter.category}`;
+    default:
+      return 'No films available';
+  }
+}
+
+function EmptyState({
+  search,
+  filter,
+  muted,
+}: {
+  search: string;
+  filter: FilmFilter;
+  muted: string;
+}) {
   return (
     <View
       style={{
@@ -520,9 +669,11 @@ function EmptyState({ search, muted }: { search: string; muted: string }) {
           color: muted,
           fontSize: 15,
           fontFamily: 'Rubik_500Medium',
+          textAlign: 'center',
+          paddingHorizontal: 24,
         }}
       >
-        {search ? `No results for “${search}”` : 'No films available'}
+        {emptyStateMessage(search, filter)}
       </Text>
     </View>
   );

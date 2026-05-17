@@ -6,6 +6,7 @@ import {
   type Asset,
 } from 'expo-media-library/next';
 import type { ScopedMutator } from 'swr';
+import { mutate as globalMutate } from 'swr';
 import useSWRInfinite from 'swr/infinite';
 import { unstable_serialize } from 'swr/infinite';
 
@@ -70,6 +71,12 @@ export async function removePhotoFromGalleryCache(
 export async function invalidateGalleryCache(mutate: ScopedMutator) {
   await mutate(getGalleryInfiniteKey(), undefined, { revalidate: true });
   await mutate(LATEST_PHOTO_SWR_KEY);
+}
+
+export function refreshGalleryCache() {
+  return globalMutate(getGalleryInfiniteKey(), undefined, { revalidate: true }).then(
+    () => globalMutate(LATEST_PHOTO_SWR_KEY),
+  );
 }
 
 /**

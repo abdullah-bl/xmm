@@ -70,7 +70,25 @@ export const storage = {
     try {
       localStorage.removeItem(key);
     } catch {}
+    snapshotCache.delete(key);
     listeners.get(key)?.forEach((fn) => fn());
+  },
+
+  keysWithPrefix(prefix: string): string[] {
+    const keys: string[] = [];
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key?.startsWith(prefix)) keys.push(key);
+      }
+    } catch {}
+    return keys;
+  },
+
+  removeByPrefix(prefix: string): void {
+    for (const key of this.keysWithPrefix(prefix)) {
+      this.remove(key);
+    }
   },
 
   subscribe(key: string, listener: Listener): () => void {

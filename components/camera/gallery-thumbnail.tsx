@@ -33,7 +33,7 @@ async function fetchLatestPhoto(): Promise<Asset | null> {
  * in-app gallery on tap. Falls back to a translucent placeholder while the
  * gallery is empty so the bottom row's left slot stays a stable size.
  */
-export function GalleryThumbnail({ size = 44 }: GalleryThumbnailProps) {
+export function GalleryThumbnail({ size = 55 }: GalleryThumbnailProps) {
   const { data: latest } = useSWR(LATEST_PHOTO_SWR_KEY, fetchLatestPhoto, {
     revalidateOnFocus: false,
   });

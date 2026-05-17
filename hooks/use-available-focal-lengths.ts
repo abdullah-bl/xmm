@@ -1,19 +1,19 @@
 import { useMemo } from 'react';
 import type { CameraDevice } from 'react-native-vision-camera';
 
-import { type FocalLengthMm } from '@/stores/camera-store';
+import { type CameraPosition, type FocalLengthMm } from '@/stores/camera-store';
 
 const ULTRA_WIDE_PRESETS: FocalLengthMm[] = [13];
 const WIDE_PRESETS: FocalLengthMm[] = [24, 35, 50];
-const TELEPHOTO_PRESETS: FocalLengthMm[] = [85, 135];
+const TELEPHOTO_PRESETS: FocalLengthMm[] = [77];
 
 /**
  * Derive the focal-length preset list from the actually available physical
  * lenses on the resolved {@linkcode CameraDevice}.
  *
  * - `ultra-wide-angle` → adds 13mm (0.5x)
- * - `wide-angle` → adds 24/35/50mm (digital zoom on the wide lens)
- * - `telephoto` → adds 85/135mm
+ * - `wide-angle` → adds 28/35/50mm (digital zoom on the wide lens)
+ * - `telephoto` → adds 77mm
  *
  * Falls back to `[24]` so the strip always has a sensible default while the
  * device is still resolving or for cameras with no detectable physical
@@ -21,8 +21,11 @@ const TELEPHOTO_PRESETS: FocalLengthMm[] = [85, 135];
  */
 export function useAvailableFocalLengths(
   device: CameraDevice | null | undefined,
+  position: CameraPosition,
 ): readonly FocalLengthMm[] {
   return useMemo(() => {
+    if (position === 'front') return [24];
+
     if (!device) return [24];
 
     const lensTypes = new Set(
@@ -40,7 +43,7 @@ export function useAvailableFocalLengths(
     return presets;
     // We key on `device.id` because vision-camera `CameraDevice` is a stable
     // hybrid object - identity changes only when the underlying device does.
-  }, [device]);
+  }, [device, position]);
 }
 
 /**

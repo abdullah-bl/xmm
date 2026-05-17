@@ -25,7 +25,7 @@ export default function PrivacyScreen() {
         {
           heading: 'Third-Party Services',
           paragraphs: [
-            'We use Expo Updates to deliver app updates. Update checks include a request to Expo containing your runtime version and platform.',
+            'We use Expo Updates to deliver app updates. The app checks for updates on launch and periodically when you return to the app; downloads happen in the background. Applying an update requires a restart, which you choose when prompted. Update checks include a request to Expo containing your runtime version and platform.',
             'Film LUT files are downloaded from our backend. The request includes your IP address as a normal part of HTTPS networking; we do not log it.',
           ],
         },

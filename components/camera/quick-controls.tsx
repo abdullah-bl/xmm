@@ -81,7 +81,8 @@ export function QuickControls({
       })),
     );
 
-  const showFocalPicker = hasMultipleFocalPresets(focalPresets);
+  const showFocalPicker =
+    position === 'back' && hasMultipleFocalPresets(focalPresets);
   const flash = FLASH_ICONS[flashMode];
 
   useEffect(() => {

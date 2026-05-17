@@ -11,7 +11,7 @@ import {
   View,
 } from 'react-native';
 
-import { useManualUpdate } from '@/hooks/use-manual-update';
+import { useAppUpdatesStatus } from '@/hooks/use-app-updates';
 import { useThemeColor } from '@/hooks/useThemeColor';
 import {
   type AspectRatio,
@@ -20,7 +20,7 @@ import {
   useCameraStore,
 } from '@/stores/camera-store';
 
-const RATIO_OPTIONS: AspectRatio[] = ['4:3', '16:9', '1:1'];
+const RATIO_OPTIONS: AspectRatio[] = ['4:3', '16:9', '1:1', '5:4', '7:5', '3:5', '3:2'];
 const QUALITY_OPTIONS: CaptureQuality[] = ['speed', 'balanced', 'quality'];
 const TIMER_OPTIONS: TimerSeconds[] = [0, 3, 10];
 const QUALITY_LABEL: Record<CaptureQuality, string> = {
@@ -61,9 +61,12 @@ export default function SettingsScreen() {
   const setGeotag = useCameraStore((s) => s.setGeotag);
   const photoHDR = useCameraStore((s) => s.photoHDR);
   const setPhotoHDR = useCameraStore((s) => s.setPhotoHDR);
+  const showDebugOverlay = useCameraStore((s) => s.showDebugOverlay);
+  const setShowDebugOverlay = useCameraStore((s) => s.setShowDebugOverlay);
 
   const version = Constants.expoConfig?.version ?? '—';
-  const { checking, checkForUpdates, updatesEnabled } = useManualUpdate();
+  const { updatesEnabled, isUpdatePending, isUpdating, applyPendingUpdate } =
+    useAppUpdatesStatus();
   const updateIdShort = Updates.updateId
     ? Updates.updateId.slice(0, 8)
     : null;
@@ -138,13 +141,38 @@ export default function SettingsScreen() {
         },
       ],
     },
+    ...(__DEV__
+      ? [
+        {
+          title: 'Developer',
+          rows: [
+            {
+              key: 'debug-overlay',
+              label: 'Show Debug Overlay',
+              switchValue: showDebugOverlay,
+              onSwitchChange: setShowDebugOverlay,
+            },
+          ],
+        } satisfies SettingsSectionData,
+      ]
+      : []),
+    {
+      title: 'Storage',
+      rows: [
+        {
+          key: 'storage',
+          label: 'Storage',
+          onPress: () => router.push('/settings/storage'),
+        },
+      ],
+    },
     {
       title: 'Feedback',
       rows: [
         {
           key: 'send-feedback',
           label: 'Send Feedback',
-          onPress: () => router.push('/feedback'),
+          onPress: () => router.push('/settings/feedback'),
           accent: true,
         },
       ],
@@ -157,37 +185,43 @@ export default function SettingsScreen() {
           label: 'Version',
           value: version,
         },
-        ...(updatesEnabled
+        ...(updatesEnabled && isUpdatePending
           ? [
-              {
-                key: 'check-updates',
-                label: checking ? 'Checking…' : 'Check for Updates',
-                onPress: () => {
-                  if (!checking) void checkForUpdates();
-                },
-                accent: true,
-              },
-            ]
+            {
+              key: 'restart-update',
+              label: 'Restart to Update',
+              onPress: applyPendingUpdate,
+              accent: true,
+            },
+          ]
+          : []),
+        ...(updatesEnabled && isUpdating
+          ? [
+            {
+              key: 'updating',
+              label: 'Updating…',
+            },
+          ]
           : []),
         ...(updateIdShort
           ? [
-              {
-                key: 'update-id',
-                label: 'Update',
-                value: updateIdShort,
-              },
-            ]
+            {
+              key: 'update-id',
+              label: 'Update',
+              value: updateIdShort,
+            },
+          ]
           : []),
         {
           key: 'privacy',
           label: 'Privacy Policy',
-          onPress: () => router.push('/privacy'),
+          onPress: () => router.push('/settings/privacy'),
           accent: true,
         },
         {
           key: 'terms',
           label: 'Terms of Service',
-          onPress: () => router.push('/terms'),
+          onPress: () => router.push('/settings/terms'),
           accent: true,
         },
       ],
@@ -222,7 +256,7 @@ export default function SettingsScreen() {
                 foreground={foreground}
                 muted={muted}
                 accent={row.accent ? accent : undefined}
-                busy={row.key === 'check-updates' && checking}
+                busy={row.key === 'updating' && isUpdating}
                 accentForeground={accentForeground}
               />
             ))}

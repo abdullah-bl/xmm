@@ -59,7 +59,7 @@ export function TopBar() {
   };
 
   return (
-    <View style={{ alignItems: 'center', paddingHorizontal: 16 }}>
+    <View style={{ alignItems: 'flex-end' }}>
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={expanded ? 'Hide camera options' : 'Show camera options'}

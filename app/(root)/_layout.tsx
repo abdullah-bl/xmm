@@ -14,15 +14,16 @@ export default function RootLayout() {
       <Stack.Screen name="films" />
       <Stack.Screen name="films/[id]" />
       <Stack.Screen
-        name="feedback"
+        name="settings/feedback"
         options={{
           presentation: 'formSheet',
           sheetGrabberVisible: true,
           sheetAllowedDetents: [1.0],
         }}
       />
-      <Stack.Screen name="privacy" />
-      <Stack.Screen name="terms" />
+      <Stack.Screen name="settings/storage" />
+      <Stack.Screen name="settings/privacy" />
+      <Stack.Screen name="settings/terms" />
     </Stack>
   );
 }

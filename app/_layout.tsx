@@ -14,7 +14,8 @@ import { Appearance, Text } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { Uniwind } from "uniwind";
 
-import { useUpdatesCheck } from "@/hooks/useUpdatesCheck";
+import { useAppUpdates } from "@/hooks/use-app-updates";
+import { configureNotifications } from "@/lib/notifications";
 import { migrateLegacySandboxGallery } from "@/lib/sandbox-migration";
 import "../global.css";
 
@@ -25,6 +26,8 @@ Uniwind.setTheme("dark");
 Appearance.setColorScheme("dark");
 
 SplashScreen.preventAutoHideAsync().catch(() => { });
+
+configureNotifications();
 
 // Initialize Sentry at module scope so it runs before `Sentry.wrap` below.
 // Calling init() inside a useEffect happens after the wrap, which causes
@@ -95,7 +98,7 @@ export default Sentry.wrap(function AppLayout() {
     migrateLegacySandboxGallery().catch(() => { });
   }, []);
 
-  useUpdatesCheck();
+  useAppUpdates();
 
   if (!fontsReady) return null;
 

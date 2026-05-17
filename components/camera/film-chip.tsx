@@ -1,21 +1,26 @@
-import { Image } from 'expo-image';
 import { Link } from 'expo-router';
 import { Pressable, Text, View } from 'react-native';
 
 import { useFilms } from '@/hooks/use-films';
-import { sampleUrlForFilm } from '@/lib/pb-files';
 import { useFilmStore } from '@/stores/film-store';
 
-import { SfIcon } from './sf-icon';
+const LONG_NAME_THRESHOLD = 6;
 
-export function FilmChip() {
+function filmChipAbbrev(name: string): string {
+  const trimmed = name.trim();
+  if (!trimmed) return '?';
+  if (trimmed.length > LONG_NAME_THRESHOLD) {
+    return trimmed.slice(0, 2).toUpperCase();
+  }
+  return trimmed[0].toUpperCase();
+}
+
+export function FilmChip({ size = 55 }: { size?: number }) {
   const { data: films } = useFilms();
   const activeFilmId = useFilmStore((s) => s.activeFilmId);
   const activeFilm = films?.find((f) => f.id === activeFilmId);
   const label = activeFilm?.name ?? 'No Film';
-  const sample = activeFilm?.samples?.[0];
-  const sampleUrl =
-    activeFilm && sample ? sampleUrlForFilm(activeFilm, sample, '160x160') : null;
+  const abbrev = filmChipAbbrev(label);
 
   return (
     <Link href="/films" asChild>
@@ -28,8 +33,8 @@ export function FilmChip() {
         >
           <View
             style={{
-              width: 46,
-              height: 46,
+              width: size,
+              height: size,
               borderRadius: 12,
               borderCurve: 'continuous',
               overflow: 'hidden',
@@ -38,49 +43,21 @@ export function FilmChip() {
               borderColor: activeFilm ? 'rgba(255,214,10,0.75)' : 'rgba(255,255,255,0.35)',
               alignItems: 'center',
               justifyContent: 'center',
+              paddingHorizontal: 4,
             }}
           >
-            {sampleUrl ? (
-              <Image
-                source={{ uri: sampleUrl }}
-                style={{ width: '100%', height: '100%' }}
-                contentFit="cover"
-                transition={120}
-                cachePolicy="memory-disk"
-              />
-            ) : (
-              <SfIcon
-                name="sparkles"
-                size={18}
-                color={activeFilm ? '#FFD60A' : '#fff'}
-                fallback="✦"
-              />
-            )}
-            {activeFilm ? (
-              <View
-                style={{
-                  position: 'absolute',
-                  right: 3,
-                  bottom: 3,
-                  paddingHorizontal: 4,
-                  paddingVertical: 1,
-                  borderRadius: 999,
-                  backgroundColor: 'rgba(0,0,0,0.58)',
-                }}
-              >
-                <Text
-                  selectable={false}
-                  style={{
-                    color: '#FFD60A',
-                    fontSize: 8,
-                    fontWeight: '800',
-                    letterSpacing: 0.3,
-                  }}
-                >
-                  FX
-                </Text>
-              </View>
-            ) : null}
+            <Text
+              selectable={false}
+              style={{
+                color: activeFilm ? '#FFD60A' : '#fff',
+                fontSize: abbrev.length > 1 ? 16 : 20,
+                fontWeight: '700',
+                textAlign: 'center',
+                letterSpacing: 0.4,
+              }}
+            >
+              {abbrev}
+            </Text>
           </View>
         </Pressable>
       </Link.Trigger>

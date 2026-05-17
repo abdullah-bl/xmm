@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { persist, createJSONStorage } from 'zustand/middleware';
+import { createJSONStorage, persist } from 'zustand/middleware';
 
 import { storage } from '@/lib/storage';
 
@@ -17,7 +17,7 @@ export type CaptureMode = 'photo' | 'video';
 
 export type WhiteBalanceMode = 'auto' | 'locked' | 'manual';
 
-export const FOCAL_LENGTHS_BACK = [13, 24, 28, 35, 50, 85, 135] as const;
+export const FOCAL_LENGTHS_BACK = [13, 28, 35, 50, 77] as const;
 
 export const FOCAL_LENGTHS_FRONT = [24] as const;
 
@@ -32,6 +32,10 @@ const TIMER_CYCLE: TimerSeconds[] = [0, 3, 10];
 interface CameraState {
   position: CameraPosition;
   focalLengthMm: FocalLengthMm;
+  /** Last back-camera focal-length preset; restored when flipping back from front. */
+  backFocalLengthMm: FocalLengthMm;
+  /** Front-camera virtual zoom relative to 1x wide (pinch-only, no lens presets). */
+  frontZoomFactor: number;
   aspectRatio: AspectRatio;
   quality: CaptureQuality;
   flashMode: FlashMode;
@@ -56,10 +60,13 @@ interface CameraState {
   lock3A: boolean;
   /** Photo vs video capture. Video uses Vision Camera recorder + native LUT export (iOS). */
   captureMode: CaptureMode;
+  /** Center-screen camera debug HUD. Defaults on in dev builds. */
+  showDebugOverlay: boolean;
 
   setPosition: (position: CameraPosition) => void;
   togglePosition: () => void;
   setFocalLength: (mm: FocalLengthMm) => void;
+  setFrontZoomFactor: (factor: number) => void;
   setAspectRatio: (ratio: AspectRatio) => void;
   cycleAspect: () => void;
   setQuality: (quality: CaptureQuality) => void;
@@ -84,6 +91,8 @@ interface CameraState {
   setLock3A: (locked: boolean) => void;
   setCaptureMode: (mode: CaptureMode) => void;
   cycleCaptureMode: () => void;
+  setShowDebugOverlay: (enabled: boolean) => void;
+  toggleShowDebugOverlay: () => void;
 }
 
 export const useCameraStore = create<CameraState>()(
@@ -91,6 +100,8 @@ export const useCameraStore = create<CameraState>()(
     (set) => ({
       position: 'back',
       focalLengthMm: 24,
+      backFocalLengthMm: 24,
+      frontZoomFactor: 1,
       aspectRatio: '4:3', // default aspect ratio
       quality: 'balanced',
       flashMode: 'off',
@@ -108,26 +119,67 @@ export const useCameraStore = create<CameraState>()(
       whiteBalanceTint: 0,
       lock3A: false,
       captureMode: 'photo',
+      showDebugOverlay: __DEV__,
 
       setPosition: (position) =>
-        set((s) => ({
-          position,
-          focalLengthMm: position === 'front' ? 24 : s.focalLengthMm,
-          lock3A: false,
-        })),
+        set((s) => {
+          const flipReset = {
+            exposureBias: 0,
+            whiteBalanceMode: 'auto' as const,
+            whiteBalanceTemperature: 5500,
+            whiteBalanceTint: 0,
+            lock3A: false,
+          };
+          if (position === 'front') {
+            return {
+              position,
+              backFocalLengthMm: s.focalLengthMm,
+              focalLengthMm: 24,
+              ...flipReset,
+            };
+          }
+          return {
+            position,
+            focalLengthMm: s.backFocalLengthMm,
+            ...flipReset,
+          };
+        }),
       togglePosition: () =>
-        set((s) => ({
-          position: s.position === 'back' ? 'front' : 'back',
-          focalLengthMm: s.position === 'back' ? 24 : s.focalLengthMm,
-          lock3A: false,
-        })),
-      setFocalLength: (mm) => set({ focalLengthMm: mm }),
+        set((s) => {
+          const flipReset = {
+            exposureBias: 0,
+            whiteBalanceMode: 'auto' as const,
+            whiteBalanceTemperature: 5500,
+            whiteBalanceTint: 0,
+            lock3A: false,
+          };
+          if (s.position === 'back') {
+            return {
+              position: 'front' as const,
+              backFocalLengthMm: s.focalLengthMm,
+              focalLengthMm: 24,
+              ...flipReset,
+            };
+          }
+          return {
+            position: 'back' as const,
+            focalLengthMm: s.backFocalLengthMm,
+            ...flipReset,
+          };
+        }),
+      setFocalLength: (mm) =>
+        set((s) =>
+          s.position === 'back'
+            ? { focalLengthMm: mm, backFocalLengthMm: mm }
+            : { focalLengthMm: mm },
+        ),
+      setFrontZoomFactor: (frontZoomFactor) => set({ frontZoomFactor }),
       setAspectRatio: (aspectRatio) => set({ aspectRatio }),
       cycleAspect: () =>
         set((s) => ({
           aspectRatio:
             ASPECT_CYCLE[
-              (ASPECT_CYCLE.indexOf(s.aspectRatio) + 1) % ASPECT_CYCLE.length
+            (ASPECT_CYCLE.indexOf(s.aspectRatio) + 1) % ASPECT_CYCLE.length
             ],
         })),
       setQuality: (quality) => set({ quality }),
@@ -136,7 +188,7 @@ export const useCameraStore = create<CameraState>()(
         set((s) => ({
           flashMode:
             FLASH_CYCLE[
-              (FLASH_CYCLE.indexOf(s.flashMode) + 1) % FLASH_CYCLE.length
+            (FLASH_CYCLE.indexOf(s.flashMode) + 1) % FLASH_CYCLE.length
             ],
         })),
       toggleGrid: () => set((s) => ({ grid: !s.grid })),
@@ -176,6 +228,9 @@ export const useCameraStore = create<CameraState>()(
         set((s) => ({
           captureMode: s.captureMode === 'photo' ? 'video' : 'photo',
         })),
+      setShowDebugOverlay: (showDebugOverlay) => set({ showDebugOverlay }),
+      toggleShowDebugOverlay: () =>
+        set((s) => ({ showDebugOverlay: !s.showDebugOverlay })),
     }),
     {
       name: 'camera-store:v1',

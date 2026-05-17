@@ -6,8 +6,8 @@ import { storage } from '@/lib/storage';
 import type { FilmsResponse } from '@/types/backend.types';
 
 const FILMS_KEY = 'films:active';
-const FILMS_CACHE_KEY = 'cache:films:v1';
-const FILM_DETAIL_PREFIX = 'cache:film:v1:';
+export const FILMS_CACHE_KEY = 'cache:films:v1';
+export const FILM_DETAIL_PREFIX = 'cache:film:v1:';
 
 interface FilmsCacheEntry {
   data: FilmsResponse[];
@@ -129,6 +129,11 @@ export function useFilm(id: string | null) {
     isOffline: !!error && !!data,
     cachedAt: cached?.cachedAt ?? null,
   };
+}
+
+export function clearFilmCatalogCache(): void {
+  storage.remove(FILMS_CACHE_KEY);
+  storage.removeByPrefix(FILM_DETAIL_PREFIX);
 }
 
 export function refreshFilms() {

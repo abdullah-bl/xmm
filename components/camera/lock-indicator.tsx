@@ -18,16 +18,16 @@ interface LockIndicatorProps {
  */
 export function LockIndicator({ visible }: LockIndicatorProps) {
   const opacity = useSharedValue(0);
-  const translateX = useSharedValue(8);
+  const translateY = useSharedValue(-6);
 
   useEffect(() => {
     opacity.value = withTiming(visible ? 1 : 0, { duration: 180 });
-    translateX.value = withTiming(visible ? 0 : 8, { duration: 200 });
-  }, [visible, opacity, translateX]);
+    translateY.value = withTiming(visible ? 0 : -6, { duration: 200 });
+  }, [visible, opacity, translateY]);
 
   const style = useAnimatedStyle(() => ({
     opacity: opacity.value,
-    transform: [{ translateX: translateX.value }],
+    transform: [{ translateY: translateY.value }],
   }));
 
   return (
@@ -37,7 +37,9 @@ export function LockIndicator({ visible }: LockIndicatorProps) {
         {
           position: 'absolute',
           top: 12,
-          right: 16,
+          left: 0,
+          right: 0,
+          alignItems: 'center',
         },
         style,
       ]}
