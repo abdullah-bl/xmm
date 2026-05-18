@@ -3,13 +3,12 @@ import * as Haptics from 'expo-haptics';
 import * as MediaLibrary from 'expo-media-library';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import { Gesture } from 'react-native-gesture-handler';
 import {
   Easing,
   cancelAnimation,
-  useAnimatedReaction,
   useSharedValue,
   withRepeat,
   withSequence,
@@ -17,49 +16,50 @@ import {
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
-  Camera,
+  type CameraOutput,
   type CameraRef,
+  type CameraSessionConfig,
   type Constraint,
-  useCameraDevice,
   useCameraPermission,
   usePhotoOutput,
   useVideoOutput,
 } from 'react-native-vision-camera';
-import { runOnJS, scheduleOnRN } from "react-native-worklets";
+import { runOnJS } from 'react-native-worklets';
 import { useShallow } from 'zustand/react/shallow';
 
+import { CameraPreview } from '@/components/camera/camera-preview';
 import { CountdownOverlay } from '@/components/camera/countdown-overlay';
 import { DebugOverlay } from '@/components/camera/debug-overlay';
 import { FilmChip } from '@/components/camera/film-chip';
-import { FocusReticle } from '@/components/camera/focus-reticle';
 import { GalleryThumbnail } from '@/components/camera/gallery-thumbnail';
 import { GridOverlay } from '@/components/camera/grid-overlay';
 import { LevelOverlay } from '@/components/camera/level-overlay';
 import { LockIndicator } from '@/components/camera/lock-indicator';
 import { QuickControls } from '@/components/camera/quick-controls';
 import { ShutterButton } from '@/components/camera/shutter-button';
-import { TopBar } from '@/components/camera/top-bar';
-import { ZoomIndicator } from '@/components/camera/zoom-indicator';
 import {
   snapToClosestFocalLength,
   useAvailableFocalLengths,
 } from '@/hooks/use-available-focal-lengths';
 import {
-  formatCameraOrientation,
-  useDeviceOrientation,
-} from '@/hooks/use-device-orientation';
-import {
   type CameraControllerDebugLike,
   useCameraControllerState,
 } from '@/hooks/use-camera-controller-state';
+import { useCameraDeviceForPosition } from '@/hooks/use-camera-device';
+import { useCameraZoom } from '@/hooks/use-camera-zoom';
+import {
+  formatCameraOrientation,
+  useDeviceOrientation,
+} from '@/hooks/use-device-orientation';
 import { useFilms } from '@/hooks/use-films';
 import { usePhotoCapture } from '@/hooks/use-photo-capture';
 import { useVideoCapture } from '@/hooks/use-video-capture';
+import { formatSessionConfigLabel } from '@/lib/camera-session-label';
 import {
-  focalLengthToZoom,
-  zoomToFocalLength,
-} from '@/lib/focal-length';
-import { type FocalLengthMm, useCameraStore } from '@/stores/camera-store';
+  formatPhotoResolution,
+  pickPhotoTargetResolution,
+} from '@/lib/photo-resolution';
+import { useCameraStore } from '@/stores/camera-store';
 import { useFilmStore } from '@/stores/film-store';
 
 const QUALITY_TO_PRIORITY = {
@@ -109,7 +109,6 @@ export default function CameraScreen() {
     setFocalLength,
     setFrontZoomFactor,
     captureMode,
-    setExposureBias,
     resetExposureBias,
     setWhiteBalanceMode,
     setWhiteBalanceManual,
@@ -135,7 +134,6 @@ export default function CameraScreen() {
       setFocalLength: s.setFocalLength,
       setFrontZoomFactor: s.setFrontZoomFactor,
       captureMode: s.captureMode,
-      setExposureBias: s.setExposureBias,
       resetExposureBias: s.resetExposureBias,
       setWhiteBalanceMode: s.setWhiteBalanceMode,
       setWhiteBalanceManual: s.setWhiteBalanceManual,
@@ -146,11 +144,9 @@ export default function CameraScreen() {
   );
 
   const { hasPermission, requestPermission } = useCameraPermission();
-  const [mediaPermission, requestMediaPermission] = MediaLibrary.usePermissions(
-    {
-      writeOnly: true,
-    },
-  );
+  const [mediaPermission, requestMediaPermission] = MediaLibrary.usePermissions({
+    writeOnly: true,
+  });
 
   const requestedRef = useRef(false);
   useEffect(() => {
@@ -164,22 +160,10 @@ export default function CameraScreen() {
     }
   }, [hasPermission, requestPermission, mediaPermission, requestMediaPermission]);
 
-  // Always wishlist all supported lens types; vision-camera ranks devices by
-  // best match and falls back gracefully when a lens is missing. The actual
-  // available focal-length presets are derived from `device.physicalDevices`
-  // below via `useAvailableFocalLengths`.
-  const device = useCameraDevice(position, {
-    physicalDevices:
-      position === 'back'
-        ? ['ultra-wide-angle', 'wide-angle', 'telephoto']
-        : ['wide-angle', 'true-depth'],
-  });
-
+  const device = useCameraDeviceForPosition(position);
   const availableFocals = useAvailableFocalLengths(device, position);
   const deviceOrientation = formatCameraOrientation(useDeviceOrientation());
 
-  // Snap the active focal length back into the available set whenever the
-  // device changes (e.g. front/back flip, continuity camera attach/detach).
   useEffect(() => {
     if (position === 'front') return;
     if (availableFocals.length === 0) return;
@@ -187,64 +171,59 @@ export default function CameraScreen() {
     setFocalLength(snapToClosestFocalLength(availableFocals, focalLengthMm));
   }, [availableFocals, focalLengthMm, position, setFocalLength]);
 
-  const photoOutput = usePhotoOutput({
-    qualityPrioritization: QUALITY_TO_PRIORITY[quality],
-  });
-
-  const videoOutput = useVideoOutput({ enableAudio: false });
-
-  const outputs = useMemo(
-    () =>
-      [photoOutput, videoOutput].filter(
-        (o): o is NonNullable<typeof o> => o != null,
-      ),
-    [photoOutput, videoOutput],
+  const targetPhotoResolution = useMemo(
+    () => pickPhotoTargetResolution(aspectRatio, device, quality),
+    [aspectRatio, device, quality],
   );
 
-  const targetZoom = useMemo(() => {
-    if (!device) return 1;
-    if (position === 'front') {
-      const wideZoom = device.zoomLensSwitchFactors?.[0] ?? 1;
-      return clamp(frontZoomFactor * wideZoom, device.minZoom, device.maxZoom);
-    }
-    return focalLengthToZoom(device, focalLengthMm);
-  }, [device, position, frontZoomFactor, focalLengthMm]);
+  const photoOutputOptions = useMemo(
+    () => ({
+      targetResolution: targetPhotoResolution,
+      qualityPrioritization: QUALITY_TO_PRIORITY[quality],
+      quality: quality === 'quality' ? 1.0 : 0.92,
+    }),
+    [quality, targetPhotoResolution],
+  );
 
-  // Worklet-safe primitives derived from the device. We snapshot these on the
-  // JS thread because vision-camera's `CameraDevice` is a hybrid object that
-  // cannot be read from a UI-thread worklet.
-  const minZoom = device?.minZoom ?? 1;
-  const maxZoom = device?.maxZoom ?? 1;
-  const wideReferenceZoom = device?.zoomLensSwitchFactors?.[0] ?? 1;
+  const photoOutput = usePhotoOutput(photoOutputOptions);
+  const videoOutput = useVideoOutput({ enableAudio: false });
+
+  const outputs = useMemo((): CameraOutput[] => {
+    const list: CameraOutput[] = [photoOutput];
+    if (captureMode === 'video') list.push(videoOutput);
+    return list;
+  }, [captureMode, photoOutput, videoOutput]);
+
+  const hdrSupported = !!device?.supportsPhotoHDR;
+  const wantsPhotoHDR = hdrSupported && photoHDR && quality !== 'quality';
+  const constraints = useMemo<Constraint[]>(() => {
+    const list: Constraint[] = [];
+    if (photoOutput) list.push({ resolutionBias: photoOutput });
+    if (quality === 'quality') list.push({ binned: false });
+    if (hdrSupported) list.push({ photoHDR: wantsPhotoHDR });
+    if (captureMode === 'video' && videoOutput) {
+      list.push({ resolutionBias: videoOutput });
+    }
+    return list;
+  }, [
+    captureMode,
+    hdrSupported,
+    photoOutput,
+    quality,
+    videoOutput,
+    wantsPhotoHDR,
+  ]);
+
+  const cameraSessionKey = `${quality}-${photoHDR}-${captureMode}`;
+
   const exposureSupported = !!device?.supportsExposureBias;
   const exposureMin = device?.minExposureBias ?? -2;
   const exposureMax = device?.maxExposureBias ?? 2;
   const clampedExposureBias = exposureSupported
     ? clamp(exposureBias, exposureMin, exposureMax)
     : 0;
-  // Always treat WB as supported — the controller guards handle hardware failures gracefully.
-  // device?.supportsWhiteBalanceLocking is unreliable on back cameras for some VisionCamera versions.
-  const whiteBalanceSupported = true //!!device?.supportsWhiteBalanceLocking;
 
-  // Precomputed `(focalMm, zoom)` pairs the worklet uses to snap continuous
-  // pinch-zoom to the highlighted preset on every frame.
-  const focalZoomTable = useMemo(
-    () =>
-      availableFocals.map((mm) => ({
-        mm,
-        zoom: focalLengthToZoom(device, mm),
-      })),
-    [availableFocals, device],
-  );
-
-  // Photo HDR is negotiated at the session level via constraints. Only push
-  // the constraint when the device actually supports it - otherwise vision-
-  // camera will reject the configuration.
-  const hdrSupported = !!device?.supportsPhotoHDR;
-  const constraints = useMemo<Constraint[] | undefined>(
-    () => (hdrSupported && photoHDR ? [{ photoHDR: true }] : undefined),
-    [hdrSupported, photoHDR],
-  );
+  const whiteBalanceSupported = true;
 
   const { data: films } = useFilms();
   const activeFilmId = useFilmStore((s) => s.activeFilmId);
@@ -258,98 +237,68 @@ export default function CameraScreen() {
     resolveActiveFilm,
   });
 
-  const {
-    videoBusy,
-    gradingProgress,
-    onVideoPressIn,
-    onVideoPressOut,
-  } = useVideoCapture({
-    videoOutput,
-    resolveActiveFilm,
-  });
+  const { videoBusy, gradingProgress, onVideoPressIn, onVideoPressOut } =
+    useVideoCapture({
+      videoOutput,
+      resolveActiveFilm,
+    });
 
-  // Vision-camera throws "This CameraDevice does not support `enableLowLightBoost`!"
-  // whenever the prop is set at all on an unsupported device, so we omit it
-  // entirely (undefined) unless we're actively turning it on.
   const lowLightBoost =
     device?.supportsLowLightBoost && nightMode ? true : undefined;
   const smoothAutoFocus = device?.supportsSmoothAutoFocus ? true : undefined;
 
-  // ---------------------------------------------------------------------
-  // Gestures + animated state
-  // ---------------------------------------------------------------------
   const cameraRef = useRef<CameraRef>(null);
   const controllerDebug = useCameraControllerState(cameraRef, showDebugOverlay);
 
-  const getController = useCallback((): CameraControllerLike | null => {
-    const ref = cameraRef.current as
-      | (CameraRef & { controller?: CameraControllerLike })
-      | null;
-    return ref?.controller ?? null;
-  }, []);
+  const {
+    zoomSV,
+    pinchActiveSV,
+    pinchGesture,
+    wideReferenceZoom,
+    selectFocalLength,
+  } = useCameraZoom({
+    device,
+    position,
+    focalLengthMm,
+    frontZoomFactor,
+    availableFocals,
+    cameraRef,
+    setFocalLength,
+    setFrontZoomFactor,
+    controllerMinZoom: showDebugOverlay
+      ? controllerDebug.controllerMinZoom
+      : undefined,
+    controllerMaxZoom: showDebugOverlay
+      ? controllerDebug.controllerMaxZoom
+      : undefined,
+  });
 
-  const zoomSV = useSharedValue(targetZoom);
   const exposureSV = useSharedValue(clampedExposureBias);
-  const savedZoomSV = useSharedValue(targetZoom);
-  const pinchActiveSV = useSharedValue(0);
-  const lastSnappedMmSV = useSharedValue<number>(focalLengthMm);
-  const isFrontSV = useSharedValue(position === 'front' ? 1 : 0);
-
   const focusPointSV = useSharedValue<{ x: number; y: number } | null>(null);
   const focusOpacitySV = useSharedValue(0);
   const focusScaleSV = useSharedValue(1);
 
   const positionRef = useRef(position);
-  const justFlippedRef = useRef(false);
 
-  useEffect(() => {
-    isFrontSV.value = position === 'front' ? 1 : 0;
-  }, [isFrontSV, position]);
-
-  // On camera flip, snap zoom and exposure instantly to avoid bounce/flash.
   useEffect(() => {
     const flipped = positionRef.current !== position;
     positionRef.current = position;
     if (!flipped) return;
 
-    justFlippedRef.current = true;
-    cancelAnimation(zoomSV);
-    zoomSV.value = targetZoom;
-    savedZoomSV.value = targetZoom;
-
     cancelAnimation(exposureSV);
     exposureSV.value = clampedExposureBias;
-
     cameraRef.current?.resetFocus().catch(() => { });
-  }, [clampedExposureBias, exposureSV, position, savedZoomSV, targetZoom, zoomSV]);
-
-  // Animate zoom to the targetZoom whenever the focal-length preset changes
-  // from chip/back-button/etc. We skip while the user is actively pinching:
-  // the worklet feeds focal-preset changes back to JS as a side-effect of
-  // pinch zoom, and animating against the user's gesture would jitter the
-  // preview. Also skip immediately after a camera flip (handled above).
-  useEffect(() => {
-    if (justFlippedRef.current) {
-      justFlippedRef.current = false;
-      return;
-    }
-    if (pinchActiveSV.value > 0) return;
-    zoomSV.value = withTiming(targetZoom, { duration: 220 });
-  }, [targetZoom, zoomSV, pinchActiveSV]);
+  }, [clampedExposureBias, exposureSV, position]);
 
   useEffect(() => {
     exposureSV.value = withTiming(clampedExposureBias, { duration: 140 });
-    if (clampedExposureBias !== exposureBias) {
-      setExposureBias(clampedExposureBias);
-    }
-  }, [clampedExposureBias, exposureBias, exposureSV, setExposureBias]);
+  }, [clampedExposureBias, exposureSV]);
 
   useEffect(() => {
     if (exposureSupported) return;
     if (exposureBias !== 0) resetExposureBias();
   }, [exposureBias, exposureSupported, resetExposureBias]);
 
-  // Pulse the reticle while AE/AF/AWB are locked; fade it out otherwise.
   useEffect(() => {
     if (lock3A) {
       cancelAnimation(focusOpacitySV);
@@ -370,8 +319,6 @@ export default function CameraScreen() {
     };
   }, [lock3A, focusOpacitySV]);
 
-  // When the user clears the lock from outside the gesture (e.g. flipping
-  // cameras), unwind the underlying vision-camera focus state too.
   const lockRef = useRef(lock3A);
   useEffect(() => {
     if (lockRef.current && !lock3A) {
@@ -379,6 +326,28 @@ export default function CameraScreen() {
     }
     lockRef.current = lock3A;
   }, [lock3A]);
+
+  const [sessionConfigLabel, setSessionConfigLabel] = useState<string>();
+
+  const handleSessionConfigSelected = useCallback((config: CameraSessionConfig) => {
+    const label = formatSessionConfigLabel(config);
+    setSessionConfigLabel(label);
+    if (__DEV__) {
+      console.log('[camera-session]', label);
+    }
+  }, []);
+
+  const targetPhotoResolutionLabel = useMemo(
+    () => formatPhotoResolution(targetPhotoResolution),
+    [targetPhotoResolution],
+  );
+
+  const getController = useCallback((): CameraControllerLike | null => {
+    const ref = cameraRef.current as
+      | (CameraRef & { controller?: CameraControllerLike })
+      | null;
+    return ref?.controller ?? null;
+  }, []);
 
   const popReticle = useCallback(() => {
     'worklet';
@@ -396,27 +365,21 @@ export default function CameraScreen() {
     );
   }, [focusOpacitySV, focusScaleSV]);
 
-  const focusAtPoint = useCallback(
-    (x: number, y: number, locked: boolean) => {
-      const ref = cameraRef.current;
-      if (!ref) return;
-      ref
-        .focusTo(
-          { x, y },
-          {
-            responsiveness: 'snappy',
-            adaptiveness: locked ? 'locked' : 'continuous',
-            autoResetAfter: locked ? null : 5,
-          },
-        )
-        .catch(() => { });
-    },
-    [],
-  );
+  const focusAtPoint = useCallback((x: number, y: number, locked: boolean) => {
+    const ref = cameraRef.current;
+    if (!ref) return;
+    ref
+      .focusTo(
+        { x, y },
+        {
+          responsiveness: 'snappy',
+          adaptiveness: locked ? 'locked' : 'continuous',
+          autoResetAfter: locked ? null : 5,
+        },
+      )
+      .catch(() => { });
+  }, []);
 
-  // Per VisionCamera docs (locking AE/AF/AWB): when the scene substantially
-  // changes, release any tap-to-lock so AE/AF/AWB resume tracking the scene.
-  // This is what makes "auto" white balance actually follow the scene.
   const handleSubjectAreaChanged = useCallback(() => {
     if (!lockRef.current) return;
     setLock3A(false);
@@ -465,15 +428,14 @@ export default function CameraScreen() {
   const setClampedExposureBias = useCallback(
     (bias: number) => {
       if (!exposureSupported) return;
-      setExposureBias(clamp(bias, exposureMin, exposureMax));
+      useCameraStore.getState().setExposureBias(clamp(bias, exposureMin, exposureMax));
     },
-    [exposureMax, exposureMin, exposureSupported, setExposureBias],
+    [exposureMax, exposureMin, exposureSupported],
   );
 
   const handleTapJS = useCallback(
     (x: number, y: number) => {
       if (lockRef.current) {
-        // Already locked: tap clears the lock and resets focus.
         setLock3A(false);
         return;
       }
@@ -490,36 +452,6 @@ export default function CameraScreen() {
       focusAtPoint(x, y, true);
     },
     [focusAtPoint, setLock3A],
-  );
-
-  const handlePinchEndJS = useCallback(
-    (finalZoom: number) => {
-      if (!device) return;
-      if (position === 'front') {
-        const displayed = finalZoom / wideReferenceZoom;
-        setFrontZoomFactor(displayed);
-        return;
-      }
-      const snapped = zoomToFocalLength(device, finalZoom, availableFocals);
-      setFocalLength(snapped);
-    },
-    [
-      availableFocals,
-      device,
-      position,
-      setFocalLength,
-      setFrontZoomFactor,
-      wideReferenceZoom,
-    ],
-  );
-
-  // The worklet only ever feeds back `mm` values that are already in
-  // `focalZoomTable`, but TS sees them as a plain number until we widen.
-  const setFocalFromWorklet = useCallback(
-    (mm: number) => {
-      setFocalLength(mm as FocalLengthMm);
-    },
-    [setFocalLength],
   );
 
   const tapGesture = useMemo(
@@ -548,36 +480,6 @@ export default function CameraScreen() {
     [focusPointSV, handleLongPressJS, popReticle],
   );
 
-  const pinchGesture = useMemo(
-    () =>
-      Gesture.Pinch()
-        .onBegin(() => {
-          'worklet';
-          savedZoomSV.value = zoomSV.value;
-          pinchActiveSV.value = withTiming(1, { duration: 120 });
-        })
-        .onUpdate((e) => {
-          'worklet';
-          const next = savedZoomSV.value * e.scale;
-          if (next < minZoom) zoomSV.value = minZoom;
-          else if (next > maxZoom) zoomSV.value = maxZoom;
-          else zoomSV.value = next;
-        })
-        .onEnd(() => {
-          'worklet';
-          pinchActiveSV.value = withTiming(0, { duration: 220 });
-          scheduleOnRN(handlePinchEndJS, zoomSV.value);
-        }),
-    [
-      handlePinchEndJS,
-      maxZoom,
-      minZoom,
-      pinchActiveSV,
-      savedZoomSV,
-      zoomSV,
-    ],
-  );
-
   const composedGesture = useMemo(
     () =>
       Gesture.Race(
@@ -587,51 +489,13 @@ export default function CameraScreen() {
     [longPressGesture, pinchGesture, tapGesture],
   );
 
-  // Mirror the focal-length chip to the live pinch zoom, so the highlighted
-  // preset always reflects what the camera is actually zoomed to. We snap on
-  // the UI thread using the precomputed focalZoomTable and only call back
-  // into JS when the chosen preset actually changes.
-  useAnimatedReaction(
-    () => zoomSV.value,
-    (zoom) => {
-      if (isFrontSV.value > 0) return;
-      if (pinchActiveSV.value === 0) return;
-      if (focalZoomTable.length === 0) return;
-      let bestMm = focalZoomTable[0].mm;
-      let bestDistance = Math.abs(focalZoomTable[0].zoom - zoom);
-      for (let i = 1; i < focalZoomTable.length; i += 1) {
-        const distance = Math.abs(focalZoomTable[i].zoom - zoom);
-        if (distance < bestDistance) {
-          bestMm = focalZoomTable[i].mm;
-          bestDistance = distance;
-        }
-      }
-      if (bestMm !== lastSnappedMmSV.value) {
-        lastSnappedMmSV.value = bestMm;
-        scheduleOnRN(setFocalFromWorklet, bestMm);
-      }
-    },
-    [focalZoomTable],
-  );
-
-  // Keep the worklet's last-snapped tracker aligned with explicit JS-side
-  // changes (chip taps, device flips), so the next pinch doesn't immediately
-  // re-snap to a stale value.
-  useEffect(() => {
-    lastSnappedMmSV.value = focalLengthMm;
-  }, [focalLengthMm, lastSnappedMmSV]);
-
   const handleShutterPress = () => {
     if (captureMode === 'video') return;
     if (state.stage === 'countdown') {
       cancelCountdown();
       return;
     }
-    capture().catch(() => {
-      // capture() handles its own user-facing errors; this catch is a
-      // defensive net to avoid an unhandled promise rejection when an
-      // unexpected error escapes the hook.
-    });
+    capture().catch(() => { });
   };
 
   if (!hasPermission) {
@@ -665,8 +529,8 @@ export default function CameraScreen() {
             marginBottom: 24,
           }}
         >
-          {Constants.expoConfig?.name ?? 'The app'} needs access to your camera
-          to capture photos.
+          {Constants.expoConfig?.name ?? 'The app'} needs access to your camera to capture
+          photos.
         </Text>
         <Pressable
           onPress={requestPermission}
@@ -678,61 +542,38 @@ export default function CameraScreen() {
             borderCurve: 'continuous',
           }}
         >
-          <Text style={{ color: '#000', fontWeight: '700' }}>
-            Grant access
-          </Text>
+          <Text style={{ color: '#000', fontWeight: '700' }}>Grant access</Text>
         </Pressable>
       </View>
     );
   }
 
   return (
-    <View className='flex-1 bg-black' style={{ paddingTop: insets.top + 8 }}>
+    <View className="flex-1 bg-black" style={{ paddingTop: insets.top + 8 }}>
       <Stack.Header hidden />
       <StatusBar hidden />
-      <View className='flex-1 bg-black overflow-hidden rounded-3xl m-2'>
+      <View className="flex-1 bg-black overflow-hidden rounded-3xl m-2">
         {device ? (
-          <GestureDetector gesture={composedGesture}>
-            <View style={StyleSheet.absoluteFill} collapsable={false}>
-              {/* Debug polling reads cameraRef.current.controller live — no onConfigured. */}
-              <Camera
-                ref={cameraRef}
-                isActive
-                device={device}
-                outputs={outputs}
-                constraints={constraints}
-                orientationSource="device"
-                zoom={zoomSV}
-                exposure={exposureSupported ? exposureSV : undefined}
-                getInitialZoom={() => zoomSV.value}
-                onSubjectAreaChanged={handleSubjectAreaChanged}
-                enableLowLightBoost={lowLightBoost}
-                enableNativeTapToFocusGesture={false}
-                enableNativeZoomGesture={false}
-
-                enableSmoothAutoFocus={smoothAutoFocus}
-                style={StyleSheet.absoluteFill}
-              />
-              <View className='absolute top-2 left-0 right-0 z-10'>
-                <View style={{ alignItems: 'flex-end', paddingRight: 16 }}>
-                  <TopBar />
-                </View>
-
-                <FocusReticle
-                  point={focusPointSV}
-                  opacity={focusOpacitySV}
-                  scale={focusScaleSV}
-                />
-              </View>
-              <View className='absolute bottom-0 left-0 right-0'>
-                <ZoomIndicator
-                  zoom={zoomSV}
-                  active={pinchActiveSV}
-                  wideReferenceZoom={wideReferenceZoom}
-                />
-              </View>
-            </View>
-          </GestureDetector>
+          <CameraPreview
+            cameraRef={cameraRef}
+            device={device}
+            outputs={outputs}
+            constraints={constraints}
+            sessionKey={cameraSessionKey}
+            gesture={composedGesture}
+            zoom={zoomSV}
+            exposure={exposureSV}
+            exposureSupported={exposureSupported}
+            wideReferenceZoom={wideReferenceZoom}
+            pinchActive={pinchActiveSV}
+            focusPoint={focusPointSV}
+            focusOpacity={focusOpacitySV}
+            focusScale={focusScaleSV}
+            lowLightBoost={lowLightBoost}
+            smoothAutoFocus={smoothAutoFocus}
+            onSubjectAreaChanged={handleSubjectAreaChanged}
+            onSessionConfigSelected={handleSessionConfigSelected}
+          />
         ) : (
           <View
             style={{
@@ -757,6 +598,9 @@ export default function CameraScreen() {
             deviceFocalLengthMm={controllerDebug.deviceFocalLengthMm}
             zoom={zoomSV}
             wideReferenceZoom={wideReferenceZoom}
+            displayableZoomFactor={controllerDebug.displayableZoomFactor}
+            sessionConfigLabel={sessionConfigLabel}
+            targetPhotoResolution={targetPhotoResolutionLabel}
             nativeWhiteBalanceMode={controllerDebug.nativeWhiteBalanceMode}
             whiteBalanceTemperature={controllerDebug.whiteBalanceTemperature}
             whiteBalanceTint={controllerDebug.whiteBalanceTint}
@@ -769,13 +613,12 @@ export default function CameraScreen() {
         ) : null}
       </View>
 
-      {/* Bottom Section */}
-      <View className='bg-black overflow-hidden  rounded-3xl min-h-1/4'>
-        <View style={styles.midSection} className='flex-1'>
+      <View className="bg-black overflow-hidden rounded-3xl min-h-1/4">
+        <View style={styles.midSection} className="flex-1">
           <QuickControls
             focalPresets={availableFocals}
             focalLengthMm={focalLengthMm}
-            onFocalLengthSelect={setFocalLength}
+            onFocalLengthSelect={selectFocalLength}
             exposureBias={clampedExposureBias}
             exposureMin={exposureMin}
             exposureMax={exposureMax}
@@ -786,17 +629,13 @@ export default function CameraScreen() {
             whiteBalanceTemperature={whiteBalanceTemperature}
             whiteBalanceTint={whiteBalanceTint}
             whiteBalanceSupported={whiteBalanceSupported}
-
             onWhiteBalanceAuto={resetWhiteBalanceToAuto}
             onWhiteBalanceLock={lockCurrentWhiteBalance}
             onWhiteBalanceManual={setManualWhiteBalance}
           />
         </View>
 
-        <View
-          className='px-4 pb-2'
-          style={{ paddingBottom: insets.bottom }}
-        >
+        <View className="px-4 pb-2" style={{ paddingBottom: insets.bottom }}>
           {gradingProgress > 0 ? (
             <Text
               style={{
@@ -809,8 +648,8 @@ export default function CameraScreen() {
               Applying film LUT… {Math.round(gradingProgress * 100)}%
             </Text>
           ) : null}
-          <View className='flex-row items-center justify-between'>
-            <View className='flex-1 items-start' style={{ alignItems: 'flex-start' }}>
+          <View className="flex-row items-center justify-between">
+            <View className="flex-1 items-start" style={{ alignItems: 'flex-start' }}>
               <GalleryThumbnail />
             </View>
 
@@ -836,23 +675,11 @@ export default function CameraScreen() {
           </View>
         </View>
       </View>
-
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-    backgroundColor: '#000',
-  },
-  topBar: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    zIndex: 10,
-  },
   midSection: {
     paddingTop: 10,
     paddingBottom: 8,

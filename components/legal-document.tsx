@@ -99,7 +99,7 @@ export function LegalDocument({
 
       <View style={{ height: 8 }} />
 
-      <Link href="/feedback" asChild>
+      <Link href="/settings/feedback" asChild>
         <Pressable
           style={({ pressed }) => ({
             paddingVertical: 12,

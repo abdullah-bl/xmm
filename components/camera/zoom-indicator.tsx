@@ -6,6 +6,8 @@ import Animated, {
 } from 'react-native-reanimated';
 import { TextInput } from 'react-native';
 
+import { displayZoomFromReference } from '@/lib/display-zoom-from-reference';
+
 import { GlassPill } from './glass-pill';
 
 const AnimatedTextInput = Animated.createAnimatedComponent(TextInput);
@@ -35,11 +37,9 @@ export function ZoomIndicator({ zoom, active, wideReferenceZoom }: ZoomIndicator
     transform: [{ scale: 0.9 + 0.1 * active.value }],
   }));
 
-  const text = useDerivedValue(() => {
-    const displayed = zoom.value / wideReferenceZoom;
-    if (displayed >= 10) return `${Math.round(displayed)}x`;
-    return `${displayed.toFixed(1)}x`;
-  });
+  const text = useDerivedValue(() =>
+    displayZoomFromReference(zoom.value, wideReferenceZoom),
+  );
 
   const animatedProps = useAnimatedProps(
     () => ({ text: text.value, defaultValue: text.value }) as object,

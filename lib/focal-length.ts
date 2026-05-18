@@ -1,6 +1,9 @@
 import type { CameraDevice } from 'react-native-vision-camera';
 
+import { displayZoomFromReference } from '@/lib/display-zoom-from-reference';
 import type { FocalLengthMm } from '@/stores/camera-store';
+
+export { displayZoomFromReference };
 
 const ULTRA_WIDE_THRESHOLD_MM = 16;
 const TELEPHOTO_THRESHOLD_MM = 85;
@@ -86,18 +89,11 @@ export function zoomToFocalLength(
   return best;
 }
 
-/**
- * Format a continuous zoom factor relative to the device's wide reference
- * lens (1x). Matches the iOS Camera app convention: `0.5x`, `1.0x`, `1.7x`.
- */
 export function displayZoomLabel(
   device: CameraDevice | null | undefined,
   zoom: number,
 ): string {
   if (!device) return `${zoom.toFixed(1)}x`;
   const wideZoom = device.zoomLensSwitchFactors?.[0] ?? 1;
-  const displayed = zoom / wideZoom;
-  if (displayed < 1) return `${displayed.toFixed(1)}x`;
-  if (displayed < 10) return `${displayed.toFixed(1)}x`;
-  return `${Math.round(displayed)}x`;
+  return displayZoomFromReference(zoom, wideZoom);
 }

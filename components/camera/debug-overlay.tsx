@@ -6,6 +6,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import type { WhiteBalanceMode as NativeWhiteBalanceMode } from 'react-native-vision-camera';
 
+import { displayZoomFromReference } from '@/lib/display-zoom-from-reference';
 import type { AspectRatio, CameraPosition } from '@/stores/camera-store';
 
 // import { GlassPill } from './glass-pill';
@@ -29,6 +30,9 @@ interface DebugOverlayProps {
   deviceFocalLengthMm?: number;
   zoom: SharedValue<number>;
   wideReferenceZoom: number;
+  displayableZoomFactor?: number;
+  sessionConfigLabel?: string;
+  targetPhotoResolution?: string;
   nativeWhiteBalanceMode?: NativeWhiteBalanceMode;
   whiteBalanceTemperature?: number;
   whiteBalanceTint?: number;
@@ -99,11 +103,9 @@ function AnimatedZoomLine({
   zoom,
   wideReferenceZoom,
 }: Pick<DebugOverlayProps, 'zoom' | 'wideReferenceZoom'>) {
-  const text = useDerivedValue(() => {
-    const displayed = zoom.value / wideReferenceZoom;
-    if (displayed >= 10) return `${Math.round(displayed)}x`;
-    return `${displayed.toFixed(1)}x`;
-  });
+  const text = useDerivedValue(() =>
+    displayZoomFromReference(zoom.value, wideReferenceZoom),
+  );
 
   const animatedProps = useAnimatedProps(
     () => ({ text: text.value, defaultValue: text.value }) as object,
@@ -151,6 +153,9 @@ export function DebugOverlay({
   deviceFocalLengthMm,
   zoom,
   wideReferenceZoom,
+  displayableZoomFactor,
+  sessionConfigLabel,
+  targetPhotoResolution,
   nativeWhiteBalanceMode,
   whiteBalanceTemperature,
   whiteBalanceTint,
@@ -195,6 +200,18 @@ export function DebugOverlay({
           ) : null}
           <DebugLine label="FL (device)" value={deviceFl} />
           <AnimatedZoomLine zoom={zoom} wideReferenceZoom={wideReferenceZoom} />
+          {displayableZoomFactor != null ? (
+            <DebugLine
+              label="ZOOM (native)"
+              value={`${displayableZoomFactor.toFixed(1)}x`}
+            />
+          ) : null}
+          {targetPhotoResolution ? (
+            <DebugLine label="PHOTO target" value={targetPhotoResolution} />
+          ) : null}
+          {sessionConfigLabel ? (
+            <DebugLine label="SESSION" value={sessionConfigLabel} />
+          ) : null}
           <DebugLine
             label="WB"
             value={formatNativeWhiteBalanceMode(nativeWhiteBalanceMode)}

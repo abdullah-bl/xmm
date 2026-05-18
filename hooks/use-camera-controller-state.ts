@@ -15,6 +15,9 @@ interface WhiteBalanceGainsLike {
 
 export interface CameraControllerDebugLike {
   zoom: number;
+  minZoom: number;
+  maxZoom: number;
+  displayableZoomFactor: number;
   whiteBalanceGains: WhiteBalanceGainsLike;
   whiteBalanceMode: WhiteBalanceMode;
   exposureBias: number;
@@ -29,6 +32,9 @@ export interface CameraControllerDebugLike {
 
 export interface CameraControllerDebugState {
   deviceFocalLengthMm?: number;
+  displayableZoomFactor?: number;
+  controllerMinZoom?: number;
+  controllerMaxZoom?: number;
   whiteBalanceTemperature?: number;
   whiteBalanceTint?: number;
   nativeWhiteBalanceMode?: WhiteBalanceMode;
@@ -75,6 +81,9 @@ export function useCameraControllerState(
           controller.device,
           controller.zoom,
         ),
+        displayableZoomFactor: controller.displayableZoomFactor,
+        controllerMinZoom: controller.minZoom,
+        controllerMaxZoom: controller.maxZoom,
         whiteBalanceTemperature: estimated?.temperature,
         whiteBalanceTint: estimated?.tint,
         nativeWhiteBalanceMode: controller.whiteBalanceMode,

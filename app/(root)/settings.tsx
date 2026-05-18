@@ -112,8 +112,11 @@ export default function SettingsScreen() {
         {
           key: 'photo-hdr',
           label: 'HDR Photos',
-          switchValue: photoHDR,
+          switchValue: quality === 'quality' ? false : photoHDR,
           onSwitchChange: setPhotoHDR,
+          switchDisabled: quality === 'quality',
+          value:
+            quality === 'quality' ? 'Off in Highest Quality (48 MP)' : undefined,
         },
         {
           key: 'grid',
@@ -252,6 +255,7 @@ export default function SettingsScreen() {
                 onPress={row.onPress}
                 switchValue={row.switchValue}
                 onSwitchChange={row.onSwitchChange}
+                switchDisabled={row.switchDisabled}
                 switchTrackColor={accent}
                 foreground={foreground}
                 muted={muted}
@@ -274,6 +278,7 @@ interface SettingsRowData {
   onPress?: () => void;
   switchValue?: boolean;
   onSwitchChange?: (value: boolean) => void;
+  switchDisabled?: boolean;
   accent?: boolean;
 }
 
@@ -337,6 +342,7 @@ function SettingsRow({
   onPress,
   switchValue,
   onSwitchChange,
+  switchDisabled,
   switchTrackColor,
   foreground,
   muted,
@@ -349,6 +355,7 @@ function SettingsRow({
   onPress?: () => void;
   switchValue?: boolean;
   onSwitchChange?: (value: boolean) => void;
+  switchDisabled?: boolean;
   switchTrackColor: string;
   foreground: string;
   muted: string;
@@ -359,13 +366,19 @@ function SettingsRow({
   const hasSwitch = switchValue !== undefined && onSwitchChange;
   const content = (
     <>
-      <Text style={{ color: accent ?? foreground, fontSize: 16 }}>
-        {label}
-      </Text>
+      <View style={{ flex: 1, gap: 2 }}>
+        <Text style={{ color: accent ?? foreground, fontSize: 16 }}>
+          {label}
+        </Text>
+        {value ? (
+          <Text style={{ color: muted, fontSize: 13 }}>{value}</Text>
+        ) : null}
+      </View>
       {hasSwitch ? (
         <Switch
           value={switchValue}
           onValueChange={onSwitchChange}
+          disabled={switchDisabled}
           trackColor={{ true: switchTrackColor }}
           ios_backgroundColor={muted}
         />
@@ -373,7 +386,7 @@ function SettingsRow({
       {busy ? (
         <ActivityIndicator color={accentForeground ?? foreground} />
       ) : null}
-      {value ? (
+      {!hasSwitch && value ? (
         <Text style={{ color: muted, fontSize: 15 }}>{value}</Text>
       ) : null}
     </>

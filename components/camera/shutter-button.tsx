@@ -1,4 +1,5 @@
-import { Pressable, View } from 'react-native';
+import * as Haptics from 'expo-haptics';
+import { Platform, Pressable, View } from 'react-native';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -15,10 +16,16 @@ interface ShutterButtonProps {
   busy?: boolean;
 }
 
-const SIZE = 66;
-const INNER = 52;
-const OUTER_RADIUS = 20;
-const INNER_RADIUS = 16;
+const SIZE = 72;
+const INNER = 62;
+const OUTER_RADIUS = 9999;
+const INNER_RADIUS = 9999;
+
+function triggerShutterHaptic() {
+  if (Platform.OS === 'ios') {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+  }
+}
 
 /**
  * Squircle (continuous-curve rounded square) shutter, replacing the
@@ -52,6 +59,7 @@ export function ShutterButton({
       disabled={disabled}
       onPress={captureMode === 'video' ? undefined : onPress}
       onPressIn={() => {
+        triggerShutterHaptic();
         scale.value = withTiming(0.95, { duration: 90 });
         innerScale.value = withTiming(0.82, { duration: 90 });
         if (captureMode === 'video') onVideoPressIn?.();

@@ -17,7 +17,7 @@ export type CaptureMode = 'photo' | 'video';
 
 export type WhiteBalanceMode = 'auto' | 'locked' | 'manual';
 
-export const FOCAL_LENGTHS_BACK = [13, 28, 35, 50, 77] as const;
+export const FOCAL_LENGTHS_BACK = [13, 24, 35, 50, 77] as const;
 
 export const FOCAL_LENGTHS_FRONT = [24] as const;
 

@@ -12,7 +12,7 @@ const TELEPHOTO_PRESETS: FocalLengthMm[] = [77];
  * lenses on the resolved {@linkcode CameraDevice}.
  *
  * - `ultra-wide-angle` → adds 13mm (0.5x)
- * - `wide-angle` → adds 28/35/50mm (digital zoom on the wide lens)
+ * - `wide-angle` → adds 24/35/50mm (digital zoom on the wide lens)
  * - `telephoto` → adds 77mm
  *
  * Falls back to `[24]` so the strip always has a sensible default while the
