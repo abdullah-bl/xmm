@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Pressable,
   Text,
@@ -7,7 +7,7 @@ import {
   type TextStyle,
 } from 'react-native';
 
-import type { WhiteBalanceMode } from '@/stores/camera-store';
+import type { WhiteBalanceMode } from '@/types/camera';
 
 import { SfIcon } from '../sf-icon';
 
@@ -16,6 +16,7 @@ const WB_TEMP_MIN = 2500;
 const WB_TEMP_MAX = 8000;
 const WB_TINT_MIN = -150;
 const WB_TINT_MAX = 150;
+const LABEL_THROTTLE_MS = 80;
 
 const clamp = (value: number, min: number, max: number) =>
   Math.min(max, Math.max(min, value));
@@ -32,7 +33,8 @@ interface WhiteBalanceSheetProps {
   supported: boolean;
   onAuto: () => void;
   onLock: () => void;
-  onManual: (temperature: number, tint: number) => void;
+  onLive: (temperature: number, tint: number) => void;
+  onCommit: (temperature: number, tint: number) => void;
 }
 
 export function WhiteBalanceSheet({
@@ -42,11 +44,51 @@ export function WhiteBalanceSheet({
   supported,
   onAuto,
   onLock,
-  onManual,
+  onLive,
+  onCommit,
 }: WhiteBalanceSheetProps) {
   const [size, setSize] = useState({ width: 1, height: 1 });
-  const markerX = normalize(temperature, WB_TEMP_MIN, WB_TEMP_MAX);
-  const markerY = 1 - normalize(tint, WB_TINT_MIN, WB_TINT_MAX);
+  const [localTemp, setLocalTemp] = useState(temperature);
+  const [localTint, setLocalTint] = useState(tint);
+  const commitRef = useRef(onCommit);
+  commitRef.current = onCommit;
+
+  useEffect(() => {
+    setLocalTemp(temperature);
+    setLocalTint(tint);
+  }, [temperature, tint]);
+
+  const throttledCommit = useRef(
+    (() => {
+      let last = 0;
+      let timer: ReturnType<typeof setTimeout> | null = null;
+      let pending: { temperature: number; tint: number } | null = null;
+      return (temperature: number, tint: number) => {
+        pending = { temperature, tint };
+        const now = Date.now();
+        const remaining = LABEL_THROTTLE_MS - (now - last);
+        if (remaining <= 0) {
+          if (timer != null) clearTimeout(timer);
+          timer = null;
+          last = now;
+          pending = null;
+          commitRef.current(temperature, tint);
+          return;
+        }
+        if (timer == null) {
+          timer = setTimeout(() => {
+            timer = null;
+            last = Date.now();
+            if (pending != null) {
+              const p = pending;
+              pending = null;
+              commitRef.current(p.temperature, p.tint);
+            }
+          }, remaining);
+        }
+      };
+    })(),
+  ).current;
 
   const apply = useCallback(
     (event: GestureResponderEvent) => {
@@ -55,10 +97,20 @@ export function WhiteBalanceSheet({
       const y = clamp(event.nativeEvent.locationY / size.height, 0, 1);
       const nextTemp = Math.round(WB_TEMP_MIN + x * (WB_TEMP_MAX - WB_TEMP_MIN));
       const nextTint = Math.round(WB_TINT_MAX - y * (WB_TINT_MAX - WB_TINT_MIN));
-      onManual(nextTemp, nextTint);
+      onLive(nextTemp, nextTint);
+      setLocalTemp(nextTemp);
+      setLocalTint(nextTint);
+      throttledCommit(nextTemp, nextTint);
     },
-    [onManual, size.height, size.width, supported],
+    [onLive, size.height, size.width, supported, throttledCommit],
   );
+
+  const handleRelease = useCallback(() => {
+    onCommit(localTemp, localTint);
+  }, [localTemp, localTint, onCommit]);
+
+  const markerX = normalize(localTemp, WB_TEMP_MIN, WB_TEMP_MAX);
+  const markerY = 1 - normalize(localTint, WB_TINT_MIN, WB_TINT_MAX);
 
   return (
     <View style={{ gap: 14, opacity: supported ? 1 : 0.4 }}>
@@ -70,8 +122,8 @@ export function WhiteBalanceSheet({
           <Text style={[valueStyle, { color: ACCENT }]}>LOCKED</Text>
         ) : (
           <Text style={valueStyle}>
-            {temperature}K {tint >= 0 ? '+' : ''}
-            {tint}
+            {localTemp}K {localTint >= 0 ? '+' : ''}
+            {localTint}
           </Text>
         )}
       </View>
@@ -84,6 +136,7 @@ export function WhiteBalanceSheet({
         disabled={!supported}
         onPress={apply}
         onTouchMove={apply}
+        onTouchEnd={handleRelease}
         onLayout={(event) => {
           const { width, height } = event.nativeEvent.layout;
           setSize({ width, height });
@@ -96,7 +149,6 @@ export function WhiteBalanceSheet({
           backgroundColor: '#fff0a8',
         }}
       >
-        {/* Cool overlay (top-left bias) */}
         <View
           style={{
             position: 'absolute',
@@ -108,7 +160,6 @@ export function WhiteBalanceSheet({
             opacity: 0.72,
           }}
         />
-        {/* Cyan blob, left */}
         <View
           style={{
             position: 'absolute',
@@ -120,7 +171,6 @@ export function WhiteBalanceSheet({
             opacity: 0.85,
           }}
         />
-        {/* Magenta/pink blob, right */}
         <View
           style={{
             position: 'absolute',
@@ -132,7 +182,6 @@ export function WhiteBalanceSheet({
             opacity: 0.74,
           }}
         />
-        {/* Warm yellow blob, bottom-right */}
         <View
           style={{
             position: 'absolute',
@@ -145,7 +194,6 @@ export function WhiteBalanceSheet({
           }}
         />
 
-        {/* Crosshair marker */}
         <View
           pointerEvents="none"
           style={{

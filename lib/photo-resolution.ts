@@ -1,9 +1,12 @@
 import { CommonResolutions, type CameraDevice, type Size } from 'react-native-vision-camera';
 
-import type { AspectRatio, CaptureQuality } from '@/stores/camera-store';
+import type { AspectRatio, CaptureQuality } from '@/types/camera';
 
 const FOUR_THREE = 4 / 3;
 const ASPECT_TOLERANCE = 0.08;
+
+/** ~12 MP — typical negotiated session / capture size on iPhone (3024×4032). */
+const STANDARD_PHOTO = CommonResolutions.UHD_4_3;
 
 const HQ_43_ASPECTS: AspectRatio[] = ['4:3', '5:4', '3:2', '7:5'];
 const HQ_169_ASPECTS: AspectRatio[] = ['16:9', '3:5'];
@@ -25,20 +28,20 @@ function hqTargetForAspect(aspectRatio: AspectRatio): Size {
 }
 
 /**
- * Pick the highest-resolution photo size the device reports, preferring
- * 4:3 sensor-native aspect when pixel counts tie.
+ * Largest photo size listed across any device format (may exceed what the
+ * live session negotiates while preview is running).
  */
 export function pickMaxPhotoResolution(device: CameraDevice): Size | undefined {
   const sizes = device.getSupportedResolutions('photo');
   if (sizes.length === 0) return undefined;
 
   let best = sizes[0];
-  let bestPixels = best.width * best.height;
+  let bestPixels = pixelCount(best);
   let bestIs43 = isFourThree(best);
 
   for (let i = 1; i < sizes.length; i += 1) {
     const candidate = sizes[i];
-    const pixels = candidate.width * candidate.height;
+    const pixels = pixelCount(candidate);
     const candidateIs43 = isFourThree(candidate);
 
     if (pixels > bestPixels) {
@@ -58,23 +61,31 @@ export function pickMaxPhotoResolution(device: CameraDevice): Size | undefined {
 }
 
 /**
- * Resolve the photo {@linkcode targetResolution} for the active quality
- * preset and aspect ratio.
- *
- * - **quality**: aspect-mapped 48 MP / 36 MP target, or device max if larger
- * - **balanced** / **speed**: highest device-reported photo size (~12 MP)
+ * Target passed to {@linkcode usePhotoOutput} — drives Vision Camera format
+ * negotiation (`resolutionBias`).
  */
-export function pickPhotoTargetResolution(
+export function pickPhotoNegotiationTarget(
+  device: CameraDevice | null | undefined,
+  quality: CaptureQuality,
+): Size {
+  if (!device) return STANDARD_PHOTO;
+  if (quality !== 'quality') return STANDARD_PHOTO;
+  // `closestTo` picks the largest photo dimensions the active format supports.
+  return CommonResolutions.HIGHEST_4_3;
+}
+
+/**
+ * Human-readable expected capture size for the debug HUD.
+ */
+export function pickPhotoDisplayResolution(
   aspectRatio: AspectRatio,
   device: CameraDevice | null | undefined,
   quality: CaptureQuality,
 ): Size {
-  const fallback = CommonResolutions.UHD_4_3;
-
-  if (!device) return fallback;
+  if (!device) return STANDARD_PHOTO;
 
   if (quality !== 'quality') {
-    return pickMaxPhotoResolution(device) ?? fallback;
+    return STANDARD_PHOTO;
   }
 
   const hqTarget = hqTargetForAspect(aspectRatio);
@@ -84,8 +95,17 @@ export function pickPhotoTargetResolution(
   return pixelCount(deviceMax) > pixelCount(hqTarget) ? deviceMax : hqTarget;
 }
 
+/** @deprecated Use {@link pickPhotoNegotiationTarget} + {@link pickPhotoDisplayResolution}. */
+export function pickPhotoTargetResolution(
+  aspectRatio: AspectRatio,
+  device: CameraDevice | null | undefined,
+  quality: CaptureQuality,
+): Size {
+  return pickPhotoDisplayResolution(aspectRatio, device, quality);
+}
+
 export function formatPhotoResolution(size: Size | undefined): string {
   if (!size) return '—';
-  const mp = (size.width * size.height) / 1_000_000;
+  const mp = pixelCount(size) / 1_000_000;
   return `${size.width}×${size.height} (${mp.toFixed(1)}MP)`;
 }

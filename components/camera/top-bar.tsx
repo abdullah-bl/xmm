@@ -4,7 +4,7 @@ import { useCallback, useState } from 'react';
 import { Pressable, View } from 'react-native';
 import { useShallow } from 'zustand/react/shallow';
 
-import { useCameraStore } from '@/stores/camera-store';
+import { useCameraSettingsStore } from '@/stores/camera-settings-store';
 
 import { GlassPill } from './glass-pill';
 import { SfIcon } from './sf-icon';
@@ -27,7 +27,7 @@ export function TopBar() {
     toggleGrid,
     level,
     toggleLevel,
-  } = useCameraStore(
+  } = useCameraSettingsStore(
     useShallow((s) => ({
       quality: s.quality,
       setQuality: s.setQuality,

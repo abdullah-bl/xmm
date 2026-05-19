@@ -41,11 +41,9 @@ import {
   snapToClosestFocalLength,
   useAvailableFocalLengths,
 } from '@/hooks/use-available-focal-lengths';
-import {
-  type CameraControllerDebugLike,
-  useCameraControllerState,
-} from '@/hooks/use-camera-controller-state';
+import { useCameraControllerState } from '@/hooks/use-camera-controller-state';
 import { useCameraDeviceForPosition } from '@/hooks/use-camera-device';
+import { useCameraSession } from '@/hooks/use-camera-session';
 import { useCameraZoom } from '@/hooks/use-camera-zoom';
 import {
   formatCameraOrientation,
@@ -57,9 +55,10 @@ import { useVideoCapture } from '@/hooks/use-video-capture';
 import { formatSessionConfigLabel } from '@/lib/camera-session-label';
 import {
   formatPhotoResolution,
-  pickPhotoTargetResolution,
+  pickPhotoDisplayResolution,
+  pickPhotoNegotiationTarget,
 } from '@/lib/photo-resolution';
-import { useCameraStore } from '@/stores/camera-store';
+import { useCameraSettingsStore } from '@/stores/camera-settings-store';
 import { useFilmStore } from '@/stores/film-store';
 
 const QUALITY_TO_PRIORITY = {
@@ -69,24 +68,6 @@ const QUALITY_TO_PRIORITY = {
 } as const;
 
 const LONG_PRESS_MIN_MS = 450;
-
-interface WhiteBalanceGainsLike {
-  redGain: number;
-  greenGain: number;
-  blueGain: number;
-}
-
-interface CameraControllerLike extends CameraControllerDebugLike {
-  device: CameraControllerDebugLike['device'] & {
-    supportsWhiteBalanceLocking?: boolean;
-    maxWhiteBalanceGain?: number;
-  };
-  lockCurrentWhiteBalance: () => Promise<void>;
-  setWhiteBalanceLocked: (gains: WhiteBalanceGainsLike) => Promise<void>;
-}
-
-const clamp = (value: number, min: number, max: number) =>
-  Math.min(max, Math.max(min, value));
 
 export default function CameraScreen() {
   const insets = useSafeAreaInsets();
@@ -101,21 +82,11 @@ export default function CameraScreen() {
     level,
     quality,
     photoHDR,
-    exposureBias,
-    whiteBalanceMode,
-    whiteBalanceTemperature,
-    whiteBalanceTint,
-    lock3A,
     setFocalLength,
     setFrontZoomFactor,
     captureMode,
-    resetExposureBias,
-    setWhiteBalanceMode,
-    setWhiteBalanceManual,
-    resetWhiteBalance,
-    setLock3A,
     showDebugOverlay,
-  } = useCameraStore(
+  } = useCameraSettingsStore(
     useShallow((s) => ({
       position: s.position,
       focalLengthMm: s.focalLengthMm,
@@ -126,19 +97,9 @@ export default function CameraScreen() {
       level: s.level,
       quality: s.quality,
       photoHDR: s.photoHDR,
-      exposureBias: s.exposureBias,
-      whiteBalanceMode: s.whiteBalanceMode,
-      whiteBalanceTemperature: s.whiteBalanceTemperature,
-      whiteBalanceTint: s.whiteBalanceTint,
-      lock3A: s.lock3A,
       setFocalLength: s.setFocalLength,
       setFrontZoomFactor: s.setFrontZoomFactor,
       captureMode: s.captureMode,
-      resetExposureBias: s.resetExposureBias,
-      setWhiteBalanceMode: s.setWhiteBalanceMode,
-      setWhiteBalanceManual: s.setWhiteBalanceManual,
-      resetWhiteBalance: s.resetWhiteBalance,
-      setLock3A: s.setLock3A,
       showDebugOverlay: s.showDebugOverlay,
     })),
   );
@@ -171,18 +132,23 @@ export default function CameraScreen() {
     setFocalLength(snapToClosestFocalLength(availableFocals, focalLengthMm));
   }, [availableFocals, focalLengthMm, position, setFocalLength]);
 
-  const targetPhotoResolution = useMemo(
-    () => pickPhotoTargetResolution(aspectRatio, device, quality),
+  const photoNegotiationTarget = useMemo(
+    () => pickPhotoNegotiationTarget(device, quality),
+    [device, quality],
+  );
+
+  const photoDisplayResolution = useMemo(
+    () => pickPhotoDisplayResolution(aspectRatio, device, quality),
     [aspectRatio, device, quality],
   );
 
   const photoOutputOptions = useMemo(
     () => ({
-      targetResolution: targetPhotoResolution,
+      targetResolution: photoNegotiationTarget,
       qualityPrioritization: QUALITY_TO_PRIORITY[quality],
       quality: quality === 'quality' ? 1.0 : 0.92,
     }),
-    [quality, targetPhotoResolution],
+    [photoNegotiationTarget, quality],
   );
 
   const photoOutput = usePhotoOutput(photoOutputOptions);
@@ -198,8 +164,10 @@ export default function CameraScreen() {
   const wantsPhotoHDR = hdrSupported && photoHDR && quality !== 'quality';
   const constraints = useMemo<Constraint[]>(() => {
     const list: Constraint[] = [];
+    if (quality === 'quality') {
+      list.push({ binned: false });
+    }
     if (photoOutput) list.push({ resolutionBias: photoOutput });
-    if (quality === 'quality') list.push({ binned: false });
     if (hdrSupported) list.push({ photoHDR: wantsPhotoHDR });
     if (captureMode === 'video' && videoOutput) {
       list.push({ resolutionBias: videoOutput });
@@ -219,9 +187,6 @@ export default function CameraScreen() {
   const exposureSupported = !!device?.supportsExposureBias;
   const exposureMin = device?.minExposureBias ?? -2;
   const exposureMax = device?.maxExposureBias ?? 2;
-  const clampedExposureBias = exposureSupported
-    ? clamp(exposureBias, exposureMin, exposureMax)
-    : 0;
 
   const whiteBalanceSupported = true;
 
@@ -251,6 +216,30 @@ export default function CameraScreen() {
   const controllerDebug = useCameraControllerState(cameraRef, showDebugOverlay);
 
   const {
+    exposureSV,
+    exposureBias,
+    lock3A,
+    lockRef,
+    whiteBalanceMode,
+    whiteBalanceTemperature,
+    whiteBalanceTint,
+    setLock3A,
+    setExposureLive,
+    commitExposure,
+    resetExposure,
+    resetOnFlip,
+    resetWhiteBalance,
+    setManualWhiteBalanceLive,
+    setManualWhiteBalance,
+    lockCurrentWhiteBalance,
+  } = useCameraSession({
+    cameraRef,
+    exposureMin,
+    exposureMax,
+    exposureSupported,
+  });
+
+  const {
     zoomSV,
     pinchActiveSV,
     pinchGesture,
@@ -273,7 +262,6 @@ export default function CameraScreen() {
       : undefined,
   });
 
-  const exposureSV = useSharedValue(clampedExposureBias);
   const focusPointSV = useSharedValue<{ x: number; y: number } | null>(null);
   const focusOpacitySV = useSharedValue(0);
   const focusScaleSV = useSharedValue(1);
@@ -285,19 +273,14 @@ export default function CameraScreen() {
     positionRef.current = position;
     if (!flipped) return;
 
-    cancelAnimation(exposureSV);
-    exposureSV.value = clampedExposureBias;
+    resetOnFlip();
     cameraRef.current?.resetFocus().catch(() => { });
-  }, [clampedExposureBias, exposureSV, position]);
-
-  useEffect(() => {
-    exposureSV.value = withTiming(clampedExposureBias, { duration: 140 });
-  }, [clampedExposureBias, exposureSV]);
+  }, [position, resetOnFlip]);
 
   useEffect(() => {
     if (exposureSupported) return;
-    if (exposureBias !== 0) resetExposureBias();
-  }, [exposureBias, exposureSupported, resetExposureBias]);
+    if (exposureBias !== 0) resetExposure();
+  }, [exposureBias, exposureSupported, resetExposure]);
 
   useEffect(() => {
     if (lock3A) {
@@ -319,35 +302,33 @@ export default function CameraScreen() {
     };
   }, [lock3A, focusOpacitySV]);
 
-  const lockRef = useRef(lock3A);
   useEffect(() => {
     if (lockRef.current && !lock3A) {
       cameraRef.current?.resetFocus().catch(() => { });
     }
     lockRef.current = lock3A;
-  }, [lock3A]);
+  }, [lock3A, lockRef]);
 
   const [sessionConfigLabel, setSessionConfigLabel] = useState<string>();
 
-  const handleSessionConfigSelected = useCallback((config: CameraSessionConfig) => {
-    const label = formatSessionConfigLabel(config);
-    setSessionConfigLabel(label);
+  const handleSessionConfigSelected = useCallback(
+    (config: CameraSessionConfig) => {
+      const label = formatSessionConfigLabel(config, {
+        wantsPhotoHDR,
+        quality,
+      });
+      setSessionConfigLabel(label);
     if (__DEV__) {
       console.log('[camera-session]', label);
     }
-  }, []);
-
-  const targetPhotoResolutionLabel = useMemo(
-    () => formatPhotoResolution(targetPhotoResolution),
-    [targetPhotoResolution],
+    },
+    [quality, wantsPhotoHDR],
   );
 
-  const getController = useCallback((): CameraControllerLike | null => {
-    const ref = cameraRef.current as
-      | (CameraRef & { controller?: CameraControllerLike })
-      | null;
-    return ref?.controller ?? null;
-  }, []);
+  const targetPhotoResolutionLabel = useMemo(
+    () => formatPhotoResolution(photoDisplayResolution),
+    [photoDisplayResolution],
+  );
 
   const popReticle = useCallback(() => {
     'worklet';
@@ -384,54 +365,13 @@ export default function CameraScreen() {
     if (!lockRef.current) return;
     setLock3A(false);
     cameraRef.current?.resetFocus().catch(() => { });
-  }, [setLock3A]);
+  }, [lockRef, setLock3A]);
 
   const resetWhiteBalanceToAuto = useCallback(() => {
     resetWhiteBalance();
     setLock3A(false);
     cameraRef.current?.resetFocus().catch(() => { });
   }, [resetWhiteBalance, setLock3A]);
-
-  const lockCurrentWhiteBalance = useCallback(() => {
-    const controller = getController();
-    if (!controller?.device.supportsWhiteBalanceLocking) return;
-    controller
-      .lockCurrentWhiteBalance()
-      .then(() => setWhiteBalanceMode('locked'))
-      .catch(() => { });
-  }, [getController, setWhiteBalanceMode]);
-
-  const setManualWhiteBalance = useCallback(
-    (temperature: number, tint: number) => {
-      const controller = getController();
-      if (!controller?.device.supportsWhiteBalanceLocking) return;
-      const gains = controller.convertWhiteBalanceTemperatureAndTintValues({
-        temperature,
-        tint,
-      });
-      const maxGain = controller.device.maxWhiteBalanceGain ?? 0;
-      const clampedGains =
-        maxGain > 0
-          ? {
-            redGain: clamp(gains.redGain, 1, maxGain),
-            greenGain: clamp(gains.greenGain, 1, maxGain),
-            blueGain: clamp(gains.blueGain, 1, maxGain),
-          }
-          : gains;
-
-      setWhiteBalanceManual(temperature, tint);
-      controller.setWhiteBalanceLocked(clampedGains).catch(() => { });
-    },
-    [getController, setWhiteBalanceManual],
-  );
-
-  const setClampedExposureBias = useCallback(
-    (bias: number) => {
-      if (!exposureSupported) return;
-      useCameraStore.getState().setExposureBias(clamp(bias, exposureMin, exposureMax));
-    },
-    [exposureMax, exposureMin, exposureSupported],
-  );
 
   const handleTapJS = useCallback(
     (x: number, y: number) => {
@@ -442,7 +382,7 @@ export default function CameraScreen() {
       Haptics.selectionAsync().catch(() => { });
       focusAtPoint(x, y, false);
     },
-    [focusAtPoint, setLock3A],
+    [focusAtPoint, lockRef, setLock3A],
   );
 
   const handleLongPressJS = useCallback(
@@ -619,19 +559,21 @@ export default function CameraScreen() {
             focalPresets={availableFocals}
             focalLengthMm={focalLengthMm}
             onFocalLengthSelect={selectFocalLength}
-            exposureBias={clampedExposureBias}
+            exposureBias={exposureBias}
             exposureMin={exposureMin}
             exposureMax={exposureMax}
             exposureSupported={exposureSupported}
-            onExposureChange={setClampedExposureBias}
-            onExposureReset={resetExposureBias}
+            onExposureLive={setExposureLive}
+            onExposureCommit={commitExposure}
+            onExposureReset={resetExposure}
             whiteBalanceMode={whiteBalanceMode}
             whiteBalanceTemperature={whiteBalanceTemperature}
             whiteBalanceTint={whiteBalanceTint}
             whiteBalanceSupported={whiteBalanceSupported}
             onWhiteBalanceAuto={resetWhiteBalanceToAuto}
             onWhiteBalanceLock={lockCurrentWhiteBalance}
-            onWhiteBalanceManual={setManualWhiteBalance}
+            onWhiteBalanceManualLive={setManualWhiteBalanceLive}
+            onWhiteBalanceManualCommit={setManualWhiteBalance}
           />
         </View>
 

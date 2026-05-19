@@ -17,8 +17,8 @@ import {
   type AspectRatio,
   type CaptureQuality,
   type TimerSeconds,
-  useCameraStore,
-} from '@/stores/camera-store';
+} from '@/types/camera';
+import { useCameraSettingsStore } from '@/stores/camera-settings-store';
 
 const RATIO_OPTIONS: AspectRatio[] = ['4:3', '16:9', '1:1', '5:4', '7:5', '3:5', '3:2'];
 const QUALITY_OPTIONS: CaptureQuality[] = ['speed', 'balanced', 'quality'];
@@ -45,24 +45,24 @@ export default function SettingsScreen() {
   const accent = useThemeColor('accent');
   const accentForeground = useThemeColor('accent-foreground');
 
-  const aspectRatio = useCameraStore((s) => s.aspectRatio);
-  const setAspectRatio = useCameraStore((s) => s.setAspectRatio);
-  const quality = useCameraStore((s) => s.quality);
-  const setQuality = useCameraStore((s) => s.setQuality);
-  const timer = useCameraStore((s) => s.timer);
-  const setTimer = useCameraStore((s) => s.setTimer);
-  const grid = useCameraStore((s) => s.grid);
-  const toggleGrid = useCameraStore((s) => s.toggleGrid);
-  const shutterSound = useCameraStore((s) => s.shutterSound);
-  const setShutterSound = useCameraStore((s) => s.setShutterSound);
-  const mirrorFrontCamera = useCameraStore((s) => s.mirrorFrontCamera);
-  const setMirrorFrontCamera = useCameraStore((s) => s.setMirrorFrontCamera);
-  const geotag = useCameraStore((s) => s.geotag);
-  const setGeotag = useCameraStore((s) => s.setGeotag);
-  const photoHDR = useCameraStore((s) => s.photoHDR);
-  const setPhotoHDR = useCameraStore((s) => s.setPhotoHDR);
-  const showDebugOverlay = useCameraStore((s) => s.showDebugOverlay);
-  const setShowDebugOverlay = useCameraStore((s) => s.setShowDebugOverlay);
+  const aspectRatio = useCameraSettingsStore((s) => s.aspectRatio);
+  const setAspectRatio = useCameraSettingsStore((s) => s.setAspectRatio);
+  const quality = useCameraSettingsStore((s) => s.quality);
+  const setQuality = useCameraSettingsStore((s) => s.setQuality);
+  const timer = useCameraSettingsStore((s) => s.timer);
+  const setTimer = useCameraSettingsStore((s) => s.setTimer);
+  const grid = useCameraSettingsStore((s) => s.grid);
+  const toggleGrid = useCameraSettingsStore((s) => s.toggleGrid);
+  const shutterSound = useCameraSettingsStore((s) => s.shutterSound);
+  const setShutterSound = useCameraSettingsStore((s) => s.setShutterSound);
+  const mirrorFrontCamera = useCameraSettingsStore((s) => s.mirrorFrontCamera);
+  const setMirrorFrontCamera = useCameraSettingsStore((s) => s.setMirrorFrontCamera);
+  const geotag = useCameraSettingsStore((s) => s.geotag);
+  const setGeotag = useCameraSettingsStore((s) => s.setGeotag);
+  const photoHDR = useCameraSettingsStore((s) => s.photoHDR);
+  const setPhotoHDR = useCameraSettingsStore((s) => s.setPhotoHDR);
+  const showDebugOverlay = useCameraSettingsStore((s) => s.showDebugOverlay);
+  const setShowDebugOverlay = useCameraSettingsStore((s) => s.setShowDebugOverlay);
 
   const version = Constants.expoConfig?.version ?? '—';
   const { updatesEnabled, isUpdatePending, isUpdating, applyPendingUpdate } =

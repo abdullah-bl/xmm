@@ -8,8 +8,8 @@ import Animated, {
 import { useShallow } from 'zustand/react/shallow';
 
 import { ENABLE_PRO_CAMERA } from '@/lib/feature-flags';
-import type { FocalLengthMm, WhiteBalanceMode } from '@/stores/camera-store';
-import { useCameraStore } from '@/stores/camera-store';
+import type { FocalLengthMm, WhiteBalanceMode } from '@/types/camera';
+import { useCameraSettingsStore } from '@/stores/camera-settings-store';
 
 import {
   FocalLengthInlinePicker,
@@ -34,7 +34,8 @@ interface QuickControlsProps {
   exposureMin: number;
   exposureMax: number;
   exposureSupported: boolean;
-  onExposureChange: (bias: number) => void;
+  onExposureLive: (bias: number) => void;
+  onExposureCommit: (bias: number) => void;
   onExposureReset: () => void;
   whiteBalanceMode: WhiteBalanceMode;
   whiteBalanceTemperature: number;
@@ -42,7 +43,8 @@ interface QuickControlsProps {
   whiteBalanceSupported: boolean;
   onWhiteBalanceAuto: () => void;
   onWhiteBalanceLock: () => void;
-  onWhiteBalanceManual: (temperature: number, tint: number) => void;
+  onWhiteBalanceManualLive: (temperature: number, tint: number) => void;
+  onWhiteBalanceManualCommit: (temperature: number, tint: number) => void;
 }
 
 export function QuickControls({
@@ -53,7 +55,8 @@ export function QuickControls({
   exposureMin,
   exposureMax,
   exposureSupported,
-  onExposureChange,
+  onExposureLive,
+  onExposureCommit,
   onExposureReset,
   whiteBalanceMode,
   whiteBalanceTemperature,
@@ -61,14 +64,15 @@ export function QuickControls({
   whiteBalanceSupported,
   onWhiteBalanceAuto,
   onWhiteBalanceLock,
-  onWhiteBalanceManual,
+  onWhiteBalanceManualLive,
+  onWhiteBalanceManualCommit,
 }: QuickControlsProps) {
   const [focalOpen, setFocalOpen] = useState(false);
   const toolbarOpacity = useSharedValue(1);
   const pickerOpacity = useSharedValue(0);
 
   const { flashMode, cycleFlash, timer, cycleTimer, togglePosition, position, captureMode, cycleCaptureMode } =
-    useCameraStore(
+    useCameraSettingsStore(
       useShallow((s) => ({
         flashMode: s.flashMode,
         cycleFlash: s.cycleFlash,
@@ -193,7 +197,8 @@ export function QuickControls({
             exposureMin={exposureMin}
             exposureMax={exposureMax}
             exposureSupported={exposureSupported}
-            onExposureChange={onExposureChange}
+            onExposureLive={onExposureLive}
+            onExposureCommit={onExposureCommit}
             onExposureReset={onExposureReset}
             whiteBalanceMode={whiteBalanceMode}
             whiteBalanceTemperature={whiteBalanceTemperature}
@@ -201,7 +206,8 @@ export function QuickControls({
             whiteBalanceSupported={whiteBalanceSupported}
             onWhiteBalanceAuto={onWhiteBalanceAuto}
             onWhiteBalanceLock={onWhiteBalanceLock}
-            onWhiteBalanceManual={onWhiteBalanceManual}
+            onWhiteBalanceManualLive={onWhiteBalanceManualLive}
+            onWhiteBalanceManualCommit={onWhiteBalanceManualCommit}
           />
         ) : null}
         <ToolbarButton

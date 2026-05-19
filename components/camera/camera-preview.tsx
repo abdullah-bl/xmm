@@ -1,4 +1,4 @@
-import type { ComponentProps, RefObject } from 'react';
+import { memo, type ComponentProps, type RefObject } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { GestureDetector } from 'react-native-gesture-handler';
 import type { SharedValue } from 'react-native-reanimated';
@@ -41,7 +41,7 @@ interface CameraPreviewProps {
   onSessionConfigSelected?: (config: CameraSessionConfig) => void;
 }
 
-export function CameraPreview({
+export const CameraPreview = memo(function CameraPreview({
   cameraRef,
   device,
   outputs,
@@ -103,4 +103,4 @@ export function CameraPreview({
       </View>
     </GestureDetector>
   );
-}
+});

@@ -13,7 +13,7 @@ import { ensureFrameCached } from '@/hooks/use-cached-frame';
 import { ensureLutCached } from '@/hooks/use-cached-lut';
 import { invalidateGalleryCache } from '@/hooks/use-gallery';
 import { saveCapture } from '@/lib/album';
-import { useCameraStore } from '@/stores/camera-store';
+import { useCameraSettingsStore } from '@/stores/camera-settings-store';
 import { useFilmStore } from '@/stores/film-store';
 import type { FilmsResponse } from '@/types/backend.types';
 
@@ -62,7 +62,7 @@ export function useVideoCapture({
         return;
       }
 
-      const camera = useCameraStore.getState();
+      const camera = useCameraSettingsStore.getState();
       const film = useFilmStore.getState();
       const activeFilm = resolveActiveFilm();
       const lutPath = activeFilm ? await ensureLutCached(activeFilm) : null;

@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Pressable,
   Text,
@@ -8,6 +8,7 @@ import {
 } from 'react-native';
 
 const ACCENT = '#FFD60A';
+const LABEL_THROTTLE_MS = 80;
 
 const clamp = (value: number, min: number, max: number) =>
   Math.min(max, Math.max(min, value));
@@ -22,7 +23,8 @@ interface ExposureSheetProps {
   min: number;
   max: number;
   supported: boolean;
-  onChange: (bias: number) => void;
+  onLive: (bias: number) => void;
+  onCommit: (bias: number) => void;
   onReset: () => void;
 }
 
@@ -31,22 +33,69 @@ export function ExposureSheet({
   min,
   max,
   supported,
-  onChange,
+  onLive,
+  onCommit,
   onReset,
 }: ExposureSheetProps) {
   const [trackWidth, setTrackWidth] = useState(1);
-  const progress = normalize(bias, min, max);
-  const neutral = normalize(0, min, max);
+  const [localBias, setLocalBias] = useState(bias);
+  const commitRef = useRef(onCommit);
+  commitRef.current = onCommit;
+
+  useEffect(() => {
+    setLocalBias(bias);
+  }, [bias]);
+
+  const throttledCommit = useRef(
+    (() => {
+      let last = 0;
+      let timer: ReturnType<typeof setTimeout> | null = null;
+      let pending: number | null = null;
+      return (value: number) => {
+        pending = value;
+        const now = Date.now();
+        const remaining = LABEL_THROTTLE_MS - (now - last);
+        if (remaining <= 0) {
+          if (timer != null) clearTimeout(timer);
+          timer = null;
+          last = now;
+          pending = null;
+          commitRef.current(value);
+          return;
+        }
+        if (timer == null) {
+          timer = setTimeout(() => {
+            timer = null;
+            last = Date.now();
+            if (pending != null) {
+              const v = pending;
+              pending = null;
+              commitRef.current(v);
+            }
+          }, remaining);
+        }
+      };
+    })(),
+  ).current;
 
   const apply = useCallback(
     (event: GestureResponderEvent) => {
       if (!supported) return;
       const ratio = clamp(event.nativeEvent.locationX / trackWidth, 0, 1);
-      const next = min + ratio * (max - min);
-      onChange(Number(next.toFixed(2)));
+      const next = Number((min + ratio * (max - min)).toFixed(2));
+      onLive(next);
+      setLocalBias(next);
+      throttledCommit(next);
     },
-    [max, min, onChange, supported, trackWidth],
+    [max, min, onLive, supported, throttledCommit, trackWidth],
   );
+
+  const handleRelease = useCallback(() => {
+    onCommit(localBias);
+  }, [localBias, onCommit]);
+
+  const progress = normalize(localBias, min, max);
+  const neutral = normalize(0, min, max);
 
   return (
     <View style={{ gap: 14, opacity: supported ? 1 : 0.4 }}>
@@ -54,7 +103,7 @@ export function ExposureSheet({
         <Text style={labelStyle}>EXPOSURE</Text>
         <Pressable onPress={onReset} disabled={!supported} hitSlop={10}>
           <Text style={[valueStyle, { color: ACCENT }]}>
-            {formatExposure(bias)}
+            {formatExposure(localBias)}
           </Text>
         </Pressable>
       </View>
@@ -63,6 +112,7 @@ export function ExposureSheet({
         disabled={!supported}
         onPress={apply}
         onTouchMove={apply}
+        onTouchEnd={handleRelease}
         onLayout={(event) => setTrackWidth(event.nativeEvent.layout.width)}
         style={{ height: 44, justifyContent: 'center' }}
       >

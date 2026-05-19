@@ -14,11 +14,8 @@ import { ensureFrameCached } from '@/hooks/use-cached-frame';
 import { ensureLutCached } from '@/hooks/use-cached-lut';
 import { invalidateGalleryCache } from '@/hooks/use-gallery';
 import { saveCapture } from '@/lib/album';
-import {
-  type AspectRatio,
-  type CaptureQuality,
-  useCameraStore,
-} from '@/stores/camera-store';
+import type { AspectRatio, CaptureQuality } from '@/types/camera';
+import { useCameraSettingsStore } from '@/stores/camera-settings-store';
 import { useFilmStore } from '@/stores/film-store';
 import type { FilmsResponse } from '@/types/backend.types';
 
@@ -172,7 +169,7 @@ export function usePhotoCapture({
     if (isCapturingRef.current) return;
     if (!photoOutput) return;
 
-    const camera = useCameraStore.getState();
+    const camera = useCameraSettingsStore.getState();
     const film = useFilmStore.getState();
     isCapturingRef.current = true;
 

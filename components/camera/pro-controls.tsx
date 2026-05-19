@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
 
-import type { WhiteBalanceMode } from '@/stores/camera-store';
+import type { WhiteBalanceMode } from '@/types/camera';
 
 import { CameraSheet } from './camera-sheet';
 import { ExposureSheet } from './sheets/exposure-sheet';
@@ -12,7 +12,8 @@ interface ProControlsProps {
   exposureMin: number;
   exposureMax: number;
   exposureSupported: boolean;
-  onExposureChange: (bias: number) => void;
+  onExposureLive: (bias: number) => void;
+  onExposureCommit: (bias: number) => void;
   onExposureReset: () => void;
   whiteBalanceMode: WhiteBalanceMode;
   whiteBalanceTemperature: number;
@@ -20,7 +21,8 @@ interface ProControlsProps {
   whiteBalanceSupported: boolean;
   onWhiteBalanceAuto: () => void;
   onWhiteBalanceLock: () => void;
-  onWhiteBalanceManual: (temperature: number, tint: number) => void;
+  onWhiteBalanceManualLive: (temperature: number, tint: number) => void;
+  onWhiteBalanceManualCommit: (temperature: number, tint: number) => void;
   /** Optional reset-all-pro-state button. */
   onResetAll?: () => void;
 }
@@ -32,7 +34,8 @@ export function ProControls({
   exposureMin,
   exposureMax,
   exposureSupported,
-  onExposureChange,
+  onExposureLive,
+  onExposureCommit,
   onExposureReset,
   whiteBalanceMode,
   whiteBalanceTemperature,
@@ -40,7 +43,8 @@ export function ProControls({
   whiteBalanceSupported,
   onWhiteBalanceAuto,
   onWhiteBalanceLock,
-  onWhiteBalanceManual,
+  onWhiteBalanceManualLive,
+  onWhiteBalanceManualCommit,
   onResetAll,
 }: ProControlsProps) {
   const [sheet, setSheet] = useState<Sheet>(null);
@@ -86,7 +90,8 @@ export function ProControls({
           min={exposureMin}
           max={exposureMax}
           supported={exposureSupported}
-          onChange={onExposureChange}
+          onLive={onExposureLive}
+          onCommit={onExposureCommit}
           onReset={onExposureReset}
         />
       </CameraSheet>
@@ -99,7 +104,8 @@ export function ProControls({
           supported={whiteBalanceSupported}
           onAuto={onWhiteBalanceAuto}
           onLock={onWhiteBalanceLock}
-          onManual={onWhiteBalanceManual}
+          onLive={onWhiteBalanceManualLive}
+          onCommit={onWhiteBalanceManualCommit}
         />
       </CameraSheet>
     </>
@@ -114,6 +120,5 @@ function formatExposure(value: number) {
 function formatWhiteBalance(mode: WhiteBalanceMode, temperature: number) {
   if (mode === 'auto') return 'AWB';
   if (mode === 'locked') return 'LOCK';
-  // Compact label under the lightbulb icon: 5500 -> "55K".
   return `${Math.round(temperature / 100)}K`;
 }

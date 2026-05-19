@@ -12,7 +12,7 @@ import type { RefObject } from 'react';
 import { scheduleOnRN } from 'react-native-worklets';
 
 import { focalLengthToZoom, zoomToFocalLength } from '@/lib/focal-length';
-import type { CameraPosition, FocalLengthMm } from '@/stores/camera-store';
+import type { CameraPosition, FocalLengthMm } from '@/types/camera';
 
 const ZOOM_ANIMATION_RATE = 8;
 const PRESET_TIMING_MS = 220;
@@ -74,15 +74,6 @@ export function useCameraZoom({
     }
     return focalLengthToZoom(device, focalLengthMm);
   }, [device, focalLengthMm, frontZoomFactor, maxZoom, minZoom, position]);
-
-  const focalZoomTable = useMemo(
-    () =>
-      availableFocals.map((mm) => ({
-        mm,
-        zoom: focalLengthToZoom(device, mm),
-      })),
-    [availableFocals, device],
-  );
 
   const zoomSV = useSharedValue(targetZoom);
   const savedZoomSV = useSharedValue(targetZoom);
@@ -191,13 +182,6 @@ export function useCameraZoom({
     Haptics.selectionAsync().catch(() => {});
   }, []);
 
-  const setFocalFromWorklet = useCallback(
-    (mm: number) => {
-      setFocalLength(mm as FocalLengthMm);
-    },
-    [setFocalLength],
-  );
-
   const handlePinchEndJS = useCallback(
     (finalZoom: number) => {
       if (!device) return;
@@ -260,29 +244,14 @@ export function useCameraZoom({
     (zoom) => {
       if (isFrontSV.value > 0) return;
       if (pinchActiveSV.value === 0) return;
-      if (focalZoomTable.length === 0) return;
 
       const lensIndex = resolveLensIndex(zoom, lensSwitchFactors);
       if (lensIndex !== lastLensIndexSV.value) {
         lastLensIndexSV.value = lensIndex;
         scheduleOnRN(triggerLensHaptic);
       }
-
-      let bestMm = focalZoomTable[0].mm;
-      let bestDistance = Math.abs(focalZoomTable[0].zoom - zoom);
-      for (let i = 1; i < focalZoomTable.length; i += 1) {
-        const distance = Math.abs(focalZoomTable[i].zoom - zoom);
-        if (distance < bestDistance) {
-          bestMm = focalZoomTable[i].mm;
-          bestDistance = distance;
-        }
-      }
-      if (bestMm !== lastSnappedMmSV.value) {
-        lastSnappedMmSV.value = bestMm;
-        scheduleOnRN(setFocalFromWorklet, bestMm);
-      }
     },
-    [focalZoomTable, lensSwitchFactors, triggerLensHaptic],
+    [lensSwitchFactors, triggerLensHaptic],
   );
 
   return {
